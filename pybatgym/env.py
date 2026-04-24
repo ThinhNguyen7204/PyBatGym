@@ -20,7 +20,6 @@ from pybatgym.config import PyBatGymConfig, load_config
 from pybatgym.models import ScheduleCommandType
 from pybatgym.observation import DefaultObservationBuilder, ObservationBuilder
 from pybatgym.reward import DefaultRewardCalculator, RewardCalculator
-from pybatgym.real_adapter import RealBatsimAdapter
 
 
 class PyBatGymEnv(gym.Env):
@@ -33,9 +32,9 @@ class PyBatGymEnv(gym.Env):
     """
 
     metadata = {"render_modes": ["human", "ansi"]}
-    
+
     def __init__(
-      self,
+        self,
         config_path: Optional[str] = None,
         config: Optional[PyBatGymConfig] = None,
         render_mode: Optional[str] = None,
@@ -49,34 +48,35 @@ class PyBatGymEnv(gym.Env):
 
         self._config = config or load_config(config_path)
         self.render_mode = render_mode
-        
+
+        # Dependency injection for testability
         if adapter is not None:
             self._adapter = adapter
         elif self._config.mode == "real":
+            from pybatgym.real_adapter import RealBatsimAdapter
             self._adapter = RealBatsimAdapter(self._config)
         else:
-            self._adapter = MockAdapter(self._config)
-        
+            self._adapter = MockAdapter(self._config)  # EventDrivenMockAdapter
         self._obs_builder = obs_builder or DefaultObservationBuilder(self._config.observation)
         self._action_mapper = action_mapper or DefaultActionMapper(self._config.observation.top_k_jobs)
         self._reward_calc = reward_calc or DefaultRewardCalculator(
             self._config.reward_weights, self._config.reward_type,
         )
-        
+
         self.observation_space = self._obs_builder.get_observation_space()
         self.action_space = self._action_mapper.get_action_space()
-        
+
         # Episode state
         self._step_count = 0
         self._cumulative_reward = 0.0
         self._state: dict[str, Any] = {}
         self._plugins: list[Any] = []
-        
+
         # Auto-register plugins from config
         for plugin in getattr(self._config, "plugins", []):
             if hasattr(plugin, "on_step"):
                 self._plugins.append(plugin)
-                
+
     def reset(
         self,
         *,
@@ -88,17 +88,17 @@ class PyBatGymEnv(gym.Env):
         self._step_count = 0
         self._cumulative_reward = 0.0
         self._reward_calc.reset()
-        
+
         events, resource = self._adapter.reset()
-        
+
         self._state = {
             "current_time": self._adapter.get_current_time(),
             "max_time": self._config.episode.max_simulation_time,
             "pending_jobs": self._adapter.get_pending_jobs(),
-            "resource": resource,
+            "resource": self._adapter.get_resource(),
             "events": events,
         }
-        
+
         obs = self._obs_builder.build(self._state)
         info = self._build_info(events)
 
@@ -106,10 +106,9 @@ class PyBatGymEnv(gym.Env):
             plugin.on_reset(self._state)
 
         return obs, info
-      
+
     def step(
-        self, 
-        action: int,
+        self, action: int,
     ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         self._step_count += 1
 
@@ -122,7 +121,7 @@ class PyBatGymEnv(gym.Env):
             "current_time": self._adapter.get_current_time(),
             "max_time": self._config.episode.max_simulation_time,
             "pending_jobs": self._adapter.get_pending_jobs(),
-            "resource": self._state["resource"],
+            "resource": self._adapter.get_resource(),
             "events": events,
         }
 
@@ -135,7 +134,7 @@ class PyBatGymEnv(gym.Env):
             episode_reward = self._reward_calc.compute_episode_reward(
                 self._adapter.get_completed_jobs(),
                 self._adapter.get_current_time(),
-                total_cores=self._config.platform.total_cores,
+                total_cores=self._config.platform.total_cores,  # RWD-1 fix
             )
             step_reward += episode_reward
 
@@ -148,7 +147,7 @@ class PyBatGymEnv(gym.Env):
             plugin.on_step(action, step_reward, self._state, terminated or truncated)
 
         return obs, step_reward, terminated, truncated, info
-      
+
     def render(self) -> Optional[str]:
         if self.render_mode == "ansi":
             return self._render_ansi()
@@ -164,7 +163,9 @@ class PyBatGymEnv(gym.Env):
     def register_plugin(self, plugin: Any) -> None:
         """Register a plugin for lifecycle hooks."""
         self._plugins.append(plugin)
-        
+
+    # -- Private helpers --
+
     def _build_info(self, events: list) -> dict[str, Any]:
         return {
             "step": self._step_count,
@@ -175,7 +176,7 @@ class PyBatGymEnv(gym.Env):
             "cumulative_reward": self._cumulative_reward,
             "num_events": len(events),
         }
-    
+
     def _render_ansi(self) -> str:
         resource = self._state.get("resource")
         if resource is None:
