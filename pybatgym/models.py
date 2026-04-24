@@ -4,11 +4,13 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
+
 class JobStatus(Enum):
     PENDING = auto()
     RUNNING = auto()
     COMPLETED = auto()
-    
+
+
 class EventType(Enum):
     JOB_SUBMITTED = auto()
     JOB_STARTED = auto()
@@ -16,16 +18,17 @@ class EventType(Enum):
     SIMULATION_ENDED = auto()
     RESOURCE_FREED = auto()
 
+
 class ScheduleCommandType(Enum):
     EXECUTE_JOB = auto()
     RESERVE_RESOURCE = auto()
     BACKFILL_JOB = auto()
     WAIT = auto()
-    
+
+
 @dataclass
 class Job:
-    """Represents an HPC batch job."""
-  
+
     job_id: int
     submit_time: float
     requested_walltime: float
@@ -34,28 +37,28 @@ class Job:
     status: JobStatus = JobStatus.PENDING
     start_time: Optional[float] = None
     finish_time: Optional[float] = None
-    
+
     @property
     def waiting_time(self) -> float:
         if self.start_time is None:
             return 0.0
         return self.start_time - self.submit_time
-      
+
     @property
     def bounded_slowdown(self) -> float:
         if self.finish_time is None or self.actual_runtime <= 0:
             return 1.0
         turnaround = self.finish_time - self.submit_time
         return max(1.0, turnaround / max(self.actual_runtime, 1.0))
-      
+
     @property
     def is_schedulable(self) -> bool:
         return self.status == JobStatus.PENDING
-      
+
+
 @dataclass
 class Resource:
-    """Represents a cluster resource pool."""
-
+    
     total_nodes: int
     total_cores_per_node: int
     used_cores: int = 0
@@ -84,20 +87,42 @@ class Resource:
 
     def release(self, cores: int) -> None:
         self.used_cores = max(0, self.used_cores - cores)
-        
+
+
 @dataclass
 class Event:
-    """Represents a simulation event from BatSim."""
 
     event_type: EventType
     timestamp: float
     job: Optional[Job] = None
     data: dict = field(default_factory=dict)
-    
+
+
 @dataclass
 class ScheduleCommand:
-    """Command sent to the simulator."""
 
     command_type: ScheduleCommandType
     job: Optional[Job] = None
     allocated_cores: int = 0
+
+class SimEventType(Enum):
+
+    JOB_SUBMISSION = auto()
+    JOB_COMPLETION = auto()
+    CALL_ME_LATER = auto()
+    SIMULATION_END = auto()
+
+
+@dataclass
+class SimEvent:
+
+    timestamp: float
+    event_type: SimEventType
+    job: Optional[Job] = None
+    data: dict = field(default_factory=dict)
+    _tiebreaker: int = 0
+
+    def __lt__(self, other: "SimEvent") -> bool:
+        if self.timestamp != other.timestamp:
+            return self.timestamp < other.timestamp
+        return self._tiebreaker < other._tiebreaker
