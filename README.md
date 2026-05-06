@@ -1,0 +1,362 @@
+# PyBatGym
+
+> Môi trường Gymnasium-compatible cho bài toán **lập lịch job HPC** (High-Performance Computing), sử dụng BatSim C++ simulator thông qua ZeroMQ.
+
+---
+
+## Mục Lục
+
+1. [Yêu Cầu Hệ Thống](#1-yêu-cầu-hệ-thống)
+2. [Clone & Cấu Trúc Project](#2-clone--cấu-trúc-project)
+3. [Khởi Động Docker (Lần Đầu)](#3-khởi-động-docker-lần-đầu)
+4. [Cài Đặt Môi Trường Python Ubuntu](#4-cài-đặt-môi-trường-python-ubuntu)
+5. [Chạy Hàng Ngày (Quick Start)](#5-chạy-hàng-ngày-quick-start)
+6. [Test 1 — Mock Mode (Không cần BatSim)](#6-test-1--mock-mode-không-cần-batsim)
+7. [Test 2 — Real Mode (BatSim C++ qua ZeroMQ)](#7-test-2--real-mode-batsim-c-qua-zeromq)
+8. [Training PPO Agent](#8-training-ppo-agent)
+9. [Xem Biểu Đồ TensorBoard](#9-xem-biểu-đồ-tensorboard)
+10. [Cấu Trúc Project](#10-cấu-trúc-project)
+11. [Troubleshooting](#11-troubleshooting)
+
+---
+
+## 1. Yêu Cầu Hệ Thống
+
+| Yêu cầu | Phiên bản |
+|---------|-----------|
+| **OS** | Windows 10/11 với WSL2 bật |
+| **Docker Desktop** | ≥ 4.x (WSL2 backend) |
+| **RAM** | ≥ 8 GB |
+| **Disk** | ≥ 5 GB |
+| **Git** | Bất kỳ |
+
+---
+
+## 2. Clone & Cấu Trúc Project
+
+```powershell
+# PowerShell — chọn thư mục bạn muốn lưu
+cd D:\PyBat
+git clone https://github.com/ThinhNguyen7204/PyBatGym_2.git
+cd PyBatGym_2
+```
+
+```
+PyBatGym_2/
+├── docker-compose.yml       ← Cấu hình các container Docker
+├── Dockerfile               ← Image gốc (Python + SB3 + TensorBoard)
+├── entrypoint.sh            ← Script khởi động container
+├── scripts/
+│   └── batsim_start.sh      ← Wrapper chờ Python bind ZMQ rồi start BatSim
+├── pybatgym/                ← Thư viện core
+│   ├── env.py               ← Gymnasium environment
+│   ├── real_adapter.py      ← Kết nối BatSim C++ qua ZeroMQ
+│   ├── batsim_adapter.py    ← MockAdapter (không cần BatSim)
+│   └── plugins/             ← TensorBoard, CSV logger, benchmark
+├── examples/
+│   ├── test_real.py         ← Test kết nối BatSim thật
+│   ├── train_ppo_trace.py   ← Huấn luyện PPO Agent
+│   └── quickstart.py        ← Demo nhanh với MockAdapter
+├── data/workloads/
+│   └── tiny_workload.json   ← 6 jobs mẫu để test
+└── docs/
+    └── UBUNTU_DOCKER_GUIDE.md  ← Hướng dẫn chi tiết mở rộng
+```
+
+---
+
+## 3. Khởi Động Docker (Lần Đầu)
+
+> **Điều kiện:** Docker Desktop đang chạy (icon Docker ở system tray Windows).
+
+Mở **PowerShell** trong thư mục project:
+
+```powershell
+cd D:\PyBat\PyBatGym_2
+
+# Pull image và khởi động container Ubuntu
+docker-compose up -d shell
+```
+
+Kiểm tra container đang chạy:
+```powershell
+docker ps
+# Bạn sẽ thấy: pybatgym_2-shell-1   Up ...
+```
+
+> Image `ghcr.io/khiemvuong/pybatgym:latest` chứa sẵn Ubuntu 22.04, Python 3.10, PyTorch, Stable-Baselines3.
+
+---
+
+## 4. Cài Đặt Môi Trường Python Ubuntu
+
+> **Chỉ cần làm 1 lần duy nhất** sau khi clone project.
+
+**Bước 4.1 — Vào bên trong container Ubuntu:**
+
+```powershell
+docker exec -it pybatgym_2-shell-1 bash
+# Bạn sẽ thấy prompt đổi thành: root@<id>:/workspace#
+```
+
+**Bước 4.2 — Tạo virtual environment và cài thư viện:**
+
+```bash
+cd /workspace
+python3 -m venv .venv_ubuntu
+source .venv_ubuntu/bin/activate
+# Prompt đổi thành: (.venv_ubuntu) root@...
+
+pip install --upgrade pip
+pip install -e .
+pip install stable-baselines3 tensorboard torch pybatsim
+```
+
+**Bước 4.3 — Kiểm tra cài đặt:**
+
+```bash
+python3 -c "from pybatgym.env import PyBatGymEnv; print('✅ PyBatGym OK')"
+python3 -c "import stable_baselines3; print('✅ SB3 OK')"
+python3 -c "import batsim; print('✅ PyBatsim OK')"
+```
+
+---
+
+## 5. Chạy Hàng Ngày (Quick Start)
+
+Mỗi lần mở lại máy tính, bạn làm theo thứ tự sau:
+
+### Terminal 1 (PowerShell) — Khởi động container:
+
+```powershell
+cd D:\PyBat\PyBatGym_2
+docker-compose up -d shell
+docker exec -it pybatgym_2-shell-1 bash
+```
+
+### Bên trong Ubuntu shell:
+
+```bash
+source /workspace/.venv_ubuntu/bin/activate
+# Bây giờ bạn đã sẵn sàng chạy bất kỳ lệnh nào
+```
+
+---
+
+## 6. Test 1 — Mock Mode (Không cần BatSim)
+
+Mock mode chạy simulator hoàn toàn trong bộ nhớ Python — nhanh, không cần kết nối mạng.
+
+**Chỉ cần 1 terminal**, bên trong Ubuntu shell:
+
+```bash
+source /workspace/.venv_ubuntu/bin/activate
+
+# Demo nhanh (synthetic workload)
+python3 examples/quickstart.py
+
+# Test với trace file thật
+python3 examples/test_trace.py
+```
+
+**Kết quả mong đợi:**
+```
+[Mock] Simulation finished. Jobs completed: 6
+avg_waiting_time: 0.00 | avg_slowdown: 1.00 | utilization: 48.0%
+```
+
+---
+
+## 7. Test 2 — Real Mode (BatSim C++ qua ZeroMQ)
+
+Real mode kết nối Python với bộ mô phỏng C++ (BatSim) qua mạng nội bộ Docker.  
+**Yêu cầu chạy 2 terminal theo đúng thứ tự.**
+
+### 🖥️ Terminal 1 (Ubuntu Shell) — Khởi động Python Agent TRƯỚC:
+
+```powershell
+# Nếu chưa có: docker-compose up -d shell
+docker exec -it pybatgym_2-shell-1 bash
+```
+
+```bash
+source /workspace/.venv_ubuntu/bin/activate
+python3 examples/test_real.py
+```
+
+Script sẽ in ra rồi **dừng và chờ** BatSim kết nối:
+```
+--- Testing PyBatGym with REAL BatSim (ZeroMQ) ---
+[Init] Workload : /workspace/data/workloads/tiny_workload.json
+[RealBatsimAdapter] Local 'batsim' binary not found.
+Assuming BatSim is running externally (e.g., Plan B via Docker).
+```
+> ⚠️ **Không được tắt terminal này!** Giữ nguyên và chuyển sang Terminal 2.
+
+### 🖥️ Terminal 2 (PowerShell) — Khởi động BatSim SAU:
+
+```powershell
+cd D:\PyBat\PyBatGym_2
+docker-compose up batsim
+```
+
+BatSim tự động đợi 6 giây (nhờ `batsim_start.sh`) rồi kết nối vào Python.
+
+**Kết quả thành công (Terminal 1):**
+```
+[Run] Running Shortest-Job-First Baseline...
+--- RESULTS ---
+{'avg_reward': -0.52, 'avg_utilization': 0.48, 'avg_waiting_time': 0.0, 'avg_slowdown': 1.0}
+Test finished.
+```
+
+**Terminal 2 sẽ in log BatSim:**
+```
+batsim-1  | [0.000000] [batsim/INFO] Batsim version: 3.1.0
+batsim-1  | [master_host:...] Sending 'JOB_SUBMITTED...'
+batsim-1  | [master_host:...] Received 'EXECUTE_JOB...'
+batsim-1 exited with code 0   ← Thành công!
+```
+
+> 💡 **Lưu ý:** Mỗi lần chạy lại `test_real.py`, phải `docker-compose down` rồi làm lại từ đầu để tránh lỗi ZMQ "Address already in use".
+
+---
+
+## 8. Training PPO Agent
+
+Training chạy ở **Mock Mode** (không cần BatSim) nên chỉ cần **1 terminal**.
+
+### 🖥️ Terminal 1 (Ubuntu Shell):
+
+```bash
+source /workspace/.venv_ubuntu/bin/activate
+python3 examples/train_ppo_trace.py
+```
+
+Script sẽ tự động chạy qua 3 giai đoạn:
+
+```
+[1/3] Running Heuristic Baselines for Comparison...   ← SJF + EASY làm baseline
+[2/3] Training PPO Agent (10,000 steps)...            ← AI học trong ~30s-2 phút
+[3/3] Evaluating Trained PPO Agent...                 ← So sánh kết quả
+
+======================================================
+                 FINAL COMPARISON
+======================================================
+Metric                    | SJF Baseline    | EASY Backfill   | Trained PPO
+---------------------------------------------------------------------------
+Avg Waiting Time (s)      | 0.00            | 0.00            | 0.00
+Avg Slowdown              | 1.00            | 1.00            | 1.00
+Avg Utilization (%)       | 48.0%           | 48.0%           | 48.0%
+```
+
+> 💡 Với `tiny_workload.json` (6 jobs, 5 nodes), cả 3 đều bằng nhau vì không có bottleneck. Giảm `config.platform.total_nodes = 2` để thấy sự khác biệt.
+
+Sau khi training xong, log TensorBoard được lưu tại `logs/tensorboard_ppo/`.
+
+---
+
+## 9. Xem Biểu Đồ TensorBoard
+
+### Cách 1 — Chạy từ bên trong Ubuntu Shell (Khuyến nghị):
+
+Bên trong Ubuntu shell (sau khi training xong):
+
+```bash
+tensorboard --logdir logs/tensorboard_ppo --bind_all --port 6006
+```
+
+Mở Chrome/Edge trên Windows → truy cập: **`http://localhost:6006`**
+
+> ✅ Hoạt động vì `docker-compose.yml` đã map port `6006:6006` ra Windows.
+
+### Cách 2 — Chạy bằng service riêng (nếu shell đang bận):
+
+Mở **Terminal 2 mới (PowerShell)**:
+
+```powershell
+cd D:\PyBat\PyBatGym_2
+docker-compose up tensorboard
+```
+
+> ⚠️ Không chạy cả 2 cách cùng lúc — sẽ bị lỗi `port is already allocated`.
+
+### Giải thích biểu đồ:
+
+| Biểu đồ | Ý nghĩa |
+|---------|---------|
+| **Episode/Total_Reward** | Tổng reward mỗi episode. Đang tăng = AI đang học tốt ✅ |
+| **Episode/Length** | Số bước mỗi episode (~25-28 với 6 jobs) |
+| **Step/Reward** | Reward từng bước nhỏ |
+| **Metrics/Utilization** | % thời gian máy chủ được tận dụng |
+
+---
+
+## 10. Cấu Trúc Project
+
+```
+pybatgym/
+├── env.py                   → Gymnasium Env chính (reset/step/close)
+├── real_adapter.py          → Cầu nối Python ↔ BatSim qua ZeroMQ
+├── batsim_adapter.py        → MockAdapter (chạy offline, không cần BatSim)
+├── observation.py           → Xây dựng observation vector cho RL agent
+├── action.py                → Map action integer → ScheduleCommand
+├── reward.py                → Tính reward đa mục tiêu (utilization/wait/slowdown)
+├── workload_parser.py       → Parse BatSim JSON workload files
+├── models.py                → Job, Resource, Event, ScheduleCommand dataclasses
+├── config/                  → Pydantic v2 config + YAML loader
+└── plugins/
+    ├── benchmark.py         → FCFS / SJF / EASY Backfilling heuristics
+    ├── tensorboard_logger.py → Ghi log cho TensorBoard
+    └── logger.py            → CSV log từng episode
+```
+
+---
+
+## 11. Troubleshooting
+
+### ❌ `docker-compose up -d shell` không tạo được container
+- Kiểm tra Docker Desktop đang chạy: icon Docker ở system tray phải màu xanh.
+
+### ❌ `ModuleNotFoundError: No module named 'pybatgym'`
+```bash
+# Quên activate venv — chạy lại:
+source /workspace/.venv_ubuntu/bin/activate
+```
+
+### ❌ BatSim báo `Segmentation fault` hoặc `Deadlock`
+Python chưa kịp bind ZMQ port trước khi BatSim kết nối.  
+**Fix:** Luôn chạy `python3 examples/test_real.py` TRƯỚC, đợi dòng "Assuming BatSim is running externally" rồi mới `docker-compose up batsim`.
+
+### ❌ `Bind for 0.0.0.0:6006 failed: port is already allocated`
+TensorBoard đang chạy rồi trong shell container. Dùng browser vào thẳng `http://localhost:6006`.  
+Đừng chạy `docker-compose up tensorboard` đồng thời.
+
+### ❌ TensorBoard hiện "No scalar data was found"
+Plugin chưa ghi log. Đảm bảo `train_ppo_trace.py` đã chạy xong **sau** khi áp dụng các bản vá mới nhất. Xóa log cũ nếu cần:
+```powershell
+# PowerShell
+Remove-Item -Recurse -Force logs\tensorboard_ppo
+```
+
+### ❌ `pkill` để reset ZMQ port
+```bash
+# Trong Ubuntu shell
+pkill -9 python3
+# Hoặc
+docker-compose down && docker-compose up -d shell
+```
+
+---
+
+## Tài Liệu Chi Tiết
+
+| File | Nội dung |
+|------|---------|
+| [`docs/UBUNTU_DOCKER_GUIDE.md`](docs/UBUNTU_DOCKER_GUIDE.md) | Hướng dẫn đầy đủ setup từ đầu, kể cả cài Nix + build BatSim |
+
+---
+
+## License
+
+MIT

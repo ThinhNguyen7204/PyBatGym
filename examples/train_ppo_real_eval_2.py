@@ -27,13 +27,12 @@ from __future__ import annotations
 
 import os
 import time
-import json
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
-from sb3_contrib import MaskablePPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 
 from pybatgym.config.base_config import PyBatGymConfig
@@ -48,7 +47,7 @@ from pybatgym.plugins.benchmark import (
 # ── Platform / workload paths ─────────────────────────────────────────────────
 
 _WORKSPACE = Path("/workspace")
-_PLATFORM  = _WORKSPACE / "data" / "platforms" / "medium_platform.xml"
+_PLATFORM  = _WORKSPACE / "data" / "platforms" / "small_platform.xml"
 _WORKLOAD  = _WORKSPACE / "data" / "workloads" / "medium_workload.json"
 # ZMQ endpoint for real BatSim (docker-compose service name "batsim")
 _BATSIM_SOCKET = os.environ.get("BATSIM_SOCKET", "tcp://*:28000")
@@ -56,140 +55,195 @@ _BATSIM_SOCKET = os.environ.get("BATSIM_SOCKET", "tcp://*:28000")
 
 # ── CompetitiveCallback (reused from phase2, inline here for self-containment) ─
 
-class _MockEpisodeDiagnosticsCallback(BaseCallback):
-    """Log MockAdapter episode health without stopping on SJF win-rate.
-
-    This callback is intentionally diagnostic-only: it verifies whether each
-    mock episode completes the expected workload and prints the core metrics
-    needed to decide if PPO training is meaningful.
-    """
+class _CompetitiveCallback(BaseCallback):
+    """Stop training when PPO beats SJF win_rate >= threshold."""
 
     def __init__(
         self,
-        expected_jobs: int,
-        writers: dict[str, SummaryWriter],
-        print_every: int = 1,
+        baselines: dict,
+        log_dir: str,
+        win_window: int = 50,
+        win_rate_threshold: float = 0.80,
+        min_episodes: int = 100,
         max_timesteps: int = 2_000_000,
+        check_every: int = 2000,
         save_path: Optional[str] = None,
         verbose: int = 1,
     ) -> None:
         super().__init__(verbose)
-        self.expected_jobs = expected_jobs
-        self.print_every = max(1, print_every)
+        self.baselines = baselines
+        self.sjf_wait = baselines.get("sjf", {}).get("avg_waiting_time", 0.0)
+        self.sjf_util = baselines.get("sjf", {}).get("avg_utilization", 0.0)
+        self.win_window = win_window
+        self.win_rate_threshold = win_rate_threshold
+        self.min_episodes = min_episodes
         self.max_timesteps = max_timesteps
+        self.check_every = check_every
         self.save_path = save_path
-        self.writers = writers
-        self.writer = writers["PPO"]  # Default to PPO writer for diagnostics
+        
+        # Multi-run writers for overlay charts
+        self.writers = {
+            "PPO": SummaryWriter(f"{log_dir}/Agent"),
+            "SJF": SummaryWriter(f"{log_dir}/SJF"),
+            "FCFS": SummaryWriter(f"{log_dir}/FCFS"),
+            "EASY": SummaryWriter(f"{log_dir}/EASY"),
+        }
 
+        self._wins: list[bool] = []
+        self._episode_waits: list[float] = []
+        self._episode_utils: list[float] = []
         self._n_episodes = 0
-        self._best_completed = -1
+        self._last_check = 0
+        self._best_win_rate = 0.0
         self._start_time = 0.0
+        self.sjf_util = 0.0  # set after baseline computation
 
     def _on_training_start(self) -> None:
         self._start_time = time.time()
-        if self.verbose >= 1:
-            print(
-                "  Mock diagnostics enabled: "
-                "completed_jobs, makespan, avg_wait, utilization, total_reward"
-            )
+        # Clean start: log initial baseline points at step 0 for horizontal line origin
+        for name, metrics in self.baselines.items():
+            tag = name.upper()
+            if tag in self.writers:
+                self.writers[tag].add_scalar("Comparison/Waiting_Time", metrics.get("avg_waiting_time", 0), 0)
+                self.writers[tag].add_scalar("Comparison/Utilization", metrics.get("avg_utilization", 0), 0)
+                self.writers[tag].add_scalar("Comparison/Slowdown", metrics.get("avg_slowdown", 0), 0)
 
     def _on_step(self) -> bool:
         dones = self.locals.get("dones", [])
-        infos = self.locals.get("infos", [])
-
         for i, done in enumerate(dones):
             if not done:
                 continue
+            self._n_episodes += 1
             env = self._get_env(i)
-            info = infos[i] if i < len(infos) else {}
             if env is not None:
-                self._n_episodes += 1
-                self._collect(env, info)
+                self._collect(env)
 
         if self.num_timesteps >= self.max_timesteps:
             print(f"\n[STOP] Hard cap {self.max_timesteps:,} steps. Episodes={self._n_episodes}")
             return False
-        return True
+
+        if self._n_episodes < self.min_episodes:
+            return True
+        if self.num_timesteps - self._last_check < self.check_every:
+            return True
+        self._last_check = self.num_timesteps
+        return self._check()
 
     def _get_env(self, idx: int = 0):
         vec_env = self.training_env
         return vec_env.envs[idx] if hasattr(vec_env, "envs") else None
 
-    def _collect(self, env, info: dict) -> None:
+    def _collect(self, env) -> None:
         raw = getattr(env, "unwrapped", env)
         adapter = getattr(raw, "_adapter", None)
         if adapter is None:
             return
+        completed = adapter.get_completed_jobs()
+        if not completed:
+            return
 
-        metrics = info.get("episode_metrics", {})
-        completed_count = int(metrics.get("completed_jobs", 0))
-        makespan = float(metrics.get("makespan", 0.0))
-        avg_wait = float(metrics.get("avg_waiting_time", 0.0))
-        avg_sd = float(metrics.get("avg_bounded_slowdown", 0.0))
-        util = float(metrics.get("utilization", 0.0))
-        total_reward = float(metrics.get("total_reward", info.get("cumulative_reward", 0.0)))
+        n = len(completed)
+        avg_wait = sum(j.waiting_time for j in completed) / n
+        makespan = adapter.get_current_time()
+        total_cores = raw._config.platform.total_cores
+        avg_sd = sum(j.bounded_slowdown for j in completed) / n
+        util = 0.0
+        if makespan > 0 and total_cores > 0:
+            busy = sum(j.actual_runtime * j.requested_resources for j in completed)
+            util = min(1.0, busy / (makespan * total_cores))  # clamp to [0,1]
 
-        complete_ok = completed_count == self.expected_jobs
-        status = "OK" if complete_ok else "INCOMPLETE"
+        won = avg_wait < self.sjf_wait
+        self._wins.append(won)
+        self._episode_waits.append(avg_wait)
+        self._episode_utils.append(util)
+
+        recent = self._wins[-self.win_window:]
+        win_rate = sum(recent) / len(recent)
+        advantage = (self.sjf_wait - avg_wait) / max(self.sjf_wait, 1e-8)
+
+        # --- Log Overlay Metrics (This is the KEY for combined charts) ---
         step = self.num_timesteps
+        # We use identical tag names across different writers so TB overlays them
+        self.writers["PPO"].add_scalar("Comparison/Waiting_Time", avg_wait, step)
+        self.writers["PPO"].add_scalar("Comparison/Utilization", util, step)
+        self.writers["PPO"].add_scalar("Comparison/Slowdown", avg_sd, step)
 
-        self.writer.add_scalar("Mock/Completed_Jobs", completed_count, step)
-        self.writer.add_scalar("Mock/Expected_Jobs", self.expected_jobs, step)
-        self.writer.add_scalar("Mock/Makespan", makespan, step)
-        self.writer.add_scalar("Mock/Avg_Waiting_Time", avg_wait, step)
-        self.writer.add_scalar("Mock/Avg_Bounded_Slowdown", avg_sd, step)
-        self.writer.add_scalar("Mock/Utilization", util, step)
-        self.writer.add_scalar("Mock/Total_Reward", total_reward, step)
-        self.writer.add_scalar("Mock/Completed_All_Jobs", 1.0 if complete_ok else 0.0, step)
+        for name, metrics in self.baselines.items():
+            tag = name.upper()
+            if tag in self.writers:
+                # Log baseline value at the SAME step as the Agent for a horizontal line
+                if "avg_waiting_time" in metrics:
+                    self.writers[tag].add_scalar("Comparison/Waiting_Time", metrics["avg_waiting_time"], step)
+                if "avg_utilization" in metrics:
+                    self.writers[tag].add_scalar("Comparison/Utilization", metrics["avg_utilization"], step)
+                if "avg_slowdown" in metrics:
+                    self.writers[tag].add_scalar("Comparison/Slowdown", metrics["avg_slowdown"], step)
 
-        # Log baselines as reference lines in the same "Mock" tags
-        for name, metrics in self.writers.items():
-            if name == "PPO": continue
-            w = self.writers[name]
-            # Use safe get
-            val = metrics.get("avg_waiting_time", 0) if isinstance(metrics, dict) else 0
-            w.add_scalar("Mock/Avg_Waiting_Time", val, step)
-
-        if completed_count > self._best_completed and self.save_path:
-            self._best_completed = completed_count
+        if win_rate > self._best_win_rate and self.save_path:
+            self._best_win_rate = win_rate
             self.model.save(self.save_path + "_best")
 
-        if self.verbose >= 1 and self._n_episodes % self.print_every == 0:
-            elapsed = time.time() - self._start_time
+    def _check(self) -> bool:
+        if len(self._wins) < self.win_window:
+            return True
+        recent = self._wins[-self.win_window:]
+        win_rate = sum(recent) / len(recent)
+        avg_wait = float(np.mean(self._episode_waits[-self.win_window:]))
+        elapsed = time.time() - self._start_time
+
+        if self.verbose >= 1:
             print(
-                f"  [Mock ep {self._n_episodes:>4}] "
-                f"completed={completed_count}/{self.expected_jobs} {status:<10} "
-                f"makespan={makespan:>8.2f}s  "
-                f"avg_wait={avg_wait:>8.2f}s  "
-                f"util={util:>6.1%}  "
-                f"reward={total_reward:>+10.4f}  "
-                f"steps={step:>8,}  "
+                f"  [{self.num_timesteps:>9,}] "
+                f"eps={self._n_episodes:>4}  "
+                f"win_rate={win_rate:.0%}  "
+                f"avg_wait={avg_wait:.1f}  "
+                f"SJF_wait={self.sjf_wait:.1f}  "
                 f"t={elapsed:.0f}s"
             )
 
-    def _on_training_end(self) -> None:
-        self.writer.close()
+        if win_rate >= self.win_rate_threshold:
+            recent_util = float(np.mean(self._episode_utils[-self.win_window:])) if self._episode_utils else 0.0
+            # Guard: only stop if utilization is also reasonably high
+            # (prevents trivial win when scheduler WAIT-s and SJF baseline is broken)
+            if self.sjf_util > 0 and recent_util < self.sjf_util * 0.8:
+                if self.verbose >= 1:
+                    print(
+                        f"  [SKIP STOP] win_rate={win_rate:.0%} but util={recent_util:.1%} "
+                        f"< 80% of SJF util={self.sjf_util:.1%} — model not truly better"
+                    )
+                return True
+            print(
+                f"\n{'='*70}\n"
+                f"[TARGET REACHED] Mock PPO beats SJF!\n"
+                f"  Win rate  : {win_rate:.1%}\n"
+                f"  avg_wait  : {avg_wait:.2f}s vs SJF={self.sjf_wait:.2f}s\n"
+                f"  util      : {recent_util:.1%}\n"
+                f"  Episodes  : {self._n_episodes}\n"
+                f"{'='*70}"
+            )
+            return False
+        return True
 
 
 # ── Env factories ─────────────────────────────────────────────────────────────
 
-def make_mock_env(workload_path: str, preset: str = "medium_batsim") -> PyBatGymEnv:
+def make_mock_env(workload_path: str) -> PyBatGymEnv:
     """MockAdapter training env — fast, no BatSim needed."""
-    config = load_preset(preset)
+    config = load_preset("small_batsim")
     config.workload.trace_path = workload_path
     return PyBatGymEnv(config=config)
 
 
-def make_real_config(preset: str = "medium_batsim") -> PyBatGymConfig:
+def make_real_config() -> PyBatGymConfig:
     """RealBatsimAdapter config — connects to docker-compose batsim service."""
-    config = load_preset(preset)
+    config = load_preset("small_batsim")
     config.mode = "real"
     return config
 
 
 # ── Final validation on real BatSim ──────────────────────────────────────────
 
-def validate_on_real(model: MaskablePPO, real_config: PyBatGymConfig, num_episodes: int = 3) -> dict:
+def validate_on_real(model: PPO, real_config: PyBatGymConfig, num_episodes: int = 3) -> dict:
     """Run trained PPO on real BatSim and return averaged metrics."""
     print(f"\n  Running {num_episodes} validation episode(s) on real BatSim...")
 
@@ -245,7 +299,6 @@ def validate_on_real(model: MaskablePPO, real_config: PyBatGymConfig, num_episod
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    preset = "medium_batsim"
     print("=" * 70)
     print("  PyBatGym: Mock Training + Real BatSim Validation")
     print("  PPO trains on MockAdapter; real BatSim eval every 50k steps")
@@ -261,7 +314,7 @@ def main() -> None:
 
     # ── Compute heuristic baselines (Mock, fast) ────────────────────────────
     print("\n[1/5] Computing heuristic baselines on Mock...")
-    _tmp = make_mock_env(str(_WORKLOAD), preset=preset)
+    _tmp = make_mock_env(str(_WORKLOAD))
     fcfs_m = run_baseline(_tmp, fcfs_policy,             num_episodes=3)
     sjf_m  = run_baseline(_tmp, sjf_policy,              num_episodes=3)
     easy_m = run_baseline(_tmp, easy_backfilling_policy, num_episodes=3)
@@ -276,29 +329,10 @@ def main() -> None:
         print(f"  ⚠️  SJF util={sjf_util:.1%} is suspiciously low (< 5%). Check workload/platform sizing.")
     print(f"\n  → PPO target: win_rate > 80% vs SJF wait={sjf_wait:.1f}s  util >= {sjf_util*0.8:.1%}")
 
-    # ── Resolve workload and count jobs ─────────────────────────────────────
-    workload_path = Path(_WORKLOAD)
-    if not workload_path.is_absolute():
-        workload_path = _WORKSPACE / workload_path
-    
-    if not workload_path.exists():
-        print(f"[ERROR] Workload not found: {workload_path}")
-        return
-
-    with open(workload_path, "r") as f:
-        workload_data = json.load(f)
-        num_jobs = len(workload_data.get("jobs", []))
-    print(f"  Workload size: {num_jobs} jobs")
-
-    # ── Load Configuration ───────────────────────────────────────────────────
-    print(f"[1/5] Loading config preset: {preset}...")
-    real_config = load_preset(preset)
-    real_config.workload.trace_path = str(workload_path)
-    real_config.workload.num_jobs = num_jobs
-
     # ── Create envs ─────────────────────────────────────────────────────────
     print("\n[2/5] Creating Mock training env...")
-    env = make_mock_env(str(workload_path), preset=preset)
+    env = make_mock_env(str(_WORKLOAD))
+    real_config = make_real_config()
 
     # ── Build PPO model ──────────────────────────────────────────────────────
     print("\n[3/5] Building PPO model...")
@@ -306,7 +340,7 @@ def main() -> None:
     model_dir.mkdir(exist_ok=True)
     save_path = str(model_dir / "ppo_real_eval")
 
-    model = MaskablePPO(
+    model = PPO(
         "MultiInputPolicy",
         env,
         verbose=0,
@@ -333,32 +367,27 @@ def main() -> None:
     run_id = int(time.time())
     log_dir = f"logs/tensorboard_comparison/PPO_Run_{run_id}"
 
-    # Create unified writers for multi-run overlay on TensorBoard
-    writers = {
-        "PPO": SummaryWriter(f"{log_dir}/PPO"),
-        "SJF": SummaryWriter(f"{log_dir}/SJF"),
-        "FCFS": SummaryWriter(f"{log_dir}/FCFS"),
-        "EASY": SummaryWriter(f"{log_dir}/EASY"),
-    }
-
-    diagnostics_cb = _MockEpisodeDiagnosticsCallback(
-        expected_jobs=num_jobs,
-        writers=writers,
-        print_every=1,
+    competitive_cb = _CompetitiveCallback(
+        baselines=baselines,
+        log_dir=log_dir,
+        win_window=50,
+        win_rate_threshold=0.80,
+        min_episodes=100,
         max_timesteps=2_000_000,
+        check_every=2000,
         save_path=save_path,
         verbose=1,
     )
 
     real_eval_cb = RealEvalCallback(
         real_config=real_config,
-        eval_freq=5_000,
-        eval_episodes=1,
+        eval_freq=25_000,
+        eval_episodes=2,
         baselines=baselines,
         verbose=1,
     )
-    # Share writers for Real evaluation overlay
-    real_eval_cb.writers = writers
+    # Share writers for Real evaluation overlay as well
+    real_eval_cb.writers = competitive_cb.writers
 
     # ── Train ────────────────────────────────────────────────────────────────
     print("\n[4/5] Training (Mock + periodic Real BatSim eval)...")
@@ -366,13 +395,13 @@ def main() -> None:
     print(f"  Real eval     : every 25,000 steps (requires docker-compose up batsim)")
     print(f"  BatSim socket : {_BATSIM_SOCKET}")
     print(f"  Platform      : {_PLATFORM}")
-    print(f"  Workload      : {_WORKLOAD} ({num_jobs} jobs, max_cores=4)")
+    print(f"  Workload      : {_WORKLOAD} (100 jobs, max_cores=4)")
     print(f"\n{'─'*70}")
 
     t0 = time.time()
     model.learn(
         total_timesteps=2_000_000,
-        callback=CallbackList([diagnostics_cb, real_eval_cb]),
+        callback=CallbackList([competitive_cb, real_eval_cb]),
         reset_num_timesteps=True,
     )
     train_time = time.time() - t0
@@ -381,13 +410,13 @@ def main() -> None:
     print(f"\n  Final model : {save_path}.zip")
     print(f"  Training    : {train_time:.0f}s ({train_time/60:.1f} min)")
     print(f"  Steps       : {model.num_timesteps:,}")
-    print(f"  Episodes    : {diagnostics_cb._n_episodes}")
-    print(f"  Best completed jobs in one Mock episode: {diagnostics_cb._best_completed}/{num_jobs}")
+    print(f"  Episodes    : {competitive_cb._n_episodes}")
+    print(f"  Best Mock win rate vs SJF: {competitive_cb._best_win_rate:.1%}")
 
     # ── Final real BatSim validation ─────────────────────────────────────────
     print("\n[5/5] Final validation on REAL BatSim (3 episodes)...")
     best_path = save_path + "_best.zip"
-    val_model = MaskablePPO.load(best_path, env=env) if Path(best_path).exists() else model
+    val_model = PPO.load(best_path, env=env) if Path(best_path).exists() else model
     real_m = validate_on_real(val_model, real_config, num_episodes=3)
 
     if real_m:

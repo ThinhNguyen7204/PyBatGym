@@ -1,3 +1,9 @@
+"""Plugin registry for PyBatGym.
+
+Plugins hook into the environment lifecycle (reset, step, close)
+to provide logging, monitoring, and benchmarking.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -5,6 +11,7 @@ from typing import Any
 
 
 class Plugin(ABC):
+    """Base class for all PyBatGym plugins."""
 
     @property
     @abstractmethod

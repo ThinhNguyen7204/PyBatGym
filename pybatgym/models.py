@@ -1,3 +1,5 @@
+"""Data models for PyBatGym simulation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,6 +30,7 @@ class ScheduleCommandType(Enum):
 
 @dataclass
 class Job:
+    """Represents an HPC batch job."""
 
     job_id: int
     submit_time: float
@@ -58,7 +61,8 @@ class Job:
 
 @dataclass
 class Resource:
-    
+    """Represents a cluster resource pool."""
+
     total_nodes: int
     total_cores_per_node: int
     used_cores: int = 0
@@ -91,6 +95,7 @@ class Resource:
 
 @dataclass
 class Event:
+    """Represents a simulation event from BatSim."""
 
     event_type: EventType
     timestamp: float
@@ -100,12 +105,19 @@ class Event:
 
 @dataclass
 class ScheduleCommand:
+    """Command sent to the simulator."""
 
     command_type: ScheduleCommandType
     job: Optional[Job] = None
     allocated_cores: int = 0
 
+
+# ---------------------------------------------------------------------------
+# Internal simulator event types (used by EventDrivenMockAdapter, NOT by RL)
+# ---------------------------------------------------------------------------
+
 class SimEventType(Enum):
+    """Internal event types for the mock event queue."""
 
     JOB_SUBMISSION = auto()
     JOB_COMPLETION = auto()
@@ -115,6 +127,11 @@ class SimEventType(Enum):
 
 @dataclass
 class SimEvent:
+    """A scheduled event in the mock simulator's priority queue.
+
+    Ordered by (timestamp, _tiebreaker) so ``heapq`` pops the earliest
+    event first, with FIFO ordering for simultaneous events.
+    """
 
     timestamp: float
     event_type: SimEventType

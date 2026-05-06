@@ -1,3 +1,8 @@
+"""Testing and Validation Utilities for PyBatGym.
+
+Provides the TesterPlugin for automated sanity checks and environment validation.
+"""
+
 from typing import Any
 import sys
 

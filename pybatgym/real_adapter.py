@@ -185,11 +185,17 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
 
         Order matters:
         1. Signal thread via _is_done flag + unblock any action_queue.get()
-        2. Force-close pybatsim's ZMQ socket (this interrupts blocking zmq_recv)
-        3. Terminate subprocess (BatSim side closes its ZMQ socket)
-        4. Join thread
-        5. Force-reset Batsim.running singleton
+        2. If simulation ended naturally, wait for thread to finish cleanly
+           (so BatSim gets the final ACK and can write its output files).
+        3. Only force-close ZMQ if simulation did NOT end naturally.
+        4. Terminate subprocess if needed.
+        5. Join thread.
+        6. Force-reset Batsim.running singleton.
         """
+        import time
+
+        simulation_ended_naturally = self._is_done
+
         # Step 1: signal stop
         self._is_done = True
         try:
@@ -197,31 +203,32 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
         except Exception:
             pass
 
-        # Give the pybatsim thread a moment to see the _is_done flag
-        # before we start tearing down the network.
-        import time
-        time.sleep(0.5)
+        if simulation_ended_naturally:
+            # Simulation finished via SIMULATION_ENDS → pybatsim thread is
+            # already in cleanup. Give it time to send the final ACK so BatSim
+            # can write its output files before exiting.
+            if self._batsim_thread is not None and self._batsim_thread.is_alive():
+                self._batsim_thread.join(timeout=10)
+        else:
+            # Simulation was truncated / forced stop → need to force-close ZMQ.
+            time.sleep(0.5)
 
-        # Step 2: forcefully close ZMQ context to interrupt blocked pybatsim thread.
-        if hasattr(self, 'bs') and self.bs is not None:
-            try:
-                # Force clear pybatsim's internal job tracking to avoid 
-                # "Job already in list" warnings on next run if reuse occurs
-                if hasattr(self.bs, 'jobs'):
-                    self.bs.jobs.clear()
-                
-                if hasattr(self.bs, 'network'):
-                    # Ensure LINGER is 0 to avoid hanging on close
-                    if hasattr(self.bs.network, 'socket'):
-                        try:
-                            import zmq
-                            self.bs.network.socket.setsockopt(zmq.LINGER, 0)
-                        except Exception:
-                            pass
-                    self.bs.network.close()
-            except Exception:
-                pass
-            self.bs = None
+            # Step 2: forcefully close ZMQ context to interrupt blocked pybatsim thread.
+            if hasattr(self, 'bs') and self.bs is not None:
+                try:
+                    if hasattr(self.bs, 'jobs'):
+                        self.bs.jobs.clear()
+                    if hasattr(self.bs, 'network'):
+                        if hasattr(self.bs.network, 'socket'):
+                            try:
+                                import zmq
+                                self.bs.network.socket.setsockopt(zmq.LINGER, 0)
+                            except Exception:
+                                pass
+                        self.bs.network.close()
+                except Exception:
+                    pass
+                self.bs = None
 
         # Step 3: kill subprocess
         if self._batsim_proc is not None:
@@ -254,7 +261,7 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
         import http.client
         import socket as _socket
 
-        container = os.environ.get("BATSIM_CONTAINER", "pybatgym_2-batsim-1")
+        container = os.environ.get("BATSIM_CONTAINER", "pybatgym-batsim-1")
         sock_path = "/var/run/docker.sock"
 
         if not Path(sock_path).exists():
@@ -413,6 +420,8 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
                 import batsim.batsim as _bmod
                 bs = _bmod.Batsim(self, self.socket_endpoint, timeout=120)
                 bs.start()
+                # Give BatSim a moment to receive the final ACK and exit cleanly
+                import time; time.sleep(1)
             except Exception as exc:
                 # "Connection not open" is expected when _kill_simulation
                 # force-closes ZMQ during cleanup — suppress it.
@@ -457,6 +466,11 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
     def onSimulationBegins(self) -> None:
         self._free_cores = set(range(self.bs.nb_compute_resources))
         self._needs_wakeup = False
+        # Luôn hiển thị log tiến trình BatSim trong quá trình eval
+        self._batsim_verbose = True
+        if self._batsim_verbose:
+            import sys
+            print(f"\n  [BatSim] Simulation begins — {self.bs.nb_compute_resources} cores, verbose ON", flush=True)
         self._state_queue.put("READY")
 
     def onBeforeEvents(self) -> None:
@@ -489,6 +503,8 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
         self._pending_jobs.append(py_job)
         self._events.append(Event(EventType.JOB_SUBMITTED, self._internal_time, job=py_job))
         self._needs_wakeup = True
+        if self._batsim_verbose:
+            print(f"  [BatSim t={job.submit_time:.1f}] JOB_SUBMIT  #{py_job.job_id:3d} | cores={py_job.requested_resources} | walltime={py_job.actual_runtime:.1f}s", flush=True)
 
     def onJobCompletion(self, job) -> None:
         """Record job completion — do NOT block here."""
@@ -505,6 +521,10 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
             self._completed_jobs.append(py_job)
             self._resource.release(py_job.requested_resources)
             self._events.append(Event(EventType.JOB_COMPLETED, self._internal_time, job=py_job))
+            if self._batsim_verbose:
+                n_done = len(self._completed_jobs)
+                n_total = n_done + len(self._running_jobs) + len(self._pending_jobs)
+                print(f"  [BatSim t={self._internal_time:7.1f}] JOB_DONE    #{py_job.job_id:3d} | wait={py_job.waiting_time:.1f}s | run={py_job.actual_runtime:.1f}s | done={n_done}/{n_total}", flush=True)
         self._needs_wakeup = True
 
     def onNoMoreEvents(self) -> None:
@@ -583,4 +603,6 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
         self._needs_wakeup = True
 
     def onSimulationEnds(self) -> None:
+        if getattr(self, '_batsim_verbose', False):
+            print(f"  [BatSim] Simulation ENDS at t={self._internal_time:.1f}s", flush=True)
         self._state_queue.put("DONE")

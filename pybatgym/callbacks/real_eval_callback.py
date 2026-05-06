@@ -1,15 +1,3 @@
-"""RealEvalCallback — evaluate PPO policy against real BatSim during Mock training.
-
-Every `eval_freq` training steps:
-  1. Create a PyBatGymEnv with mode="real" (RealBatsimAdapter via ZMQ)
-  2. Run `eval_episodes` episodes with current PPO model (deterministic)
-  3. Log Real/* metrics to TensorBoard
-  4. Gracefully skip if BatSim is unavailable (training continues)
-
-Requirements:
-  - docker-compose up batsim   must be running before training starts
-  - BATSIM_SOCKET env var (default: tcp://batsim:28000)
-"""
 
 from __future__ import annotations
 
@@ -86,10 +74,19 @@ class RealEvalCallback(BaseCallback):
                 ep_reward = 0.0
 
                 while not done:
-                    action, _ = self.model.predict(obs, deterministic=True)
+                    # Extract action masks for MaskablePPO support
+                    action_masks = None
+                    if isinstance(obs, dict) and "action_mask" in obs:
+                        action_masks = obs["action_mask"]
+                    action, _ = self.model.predict(
+                        obs, deterministic=True, action_masks=action_masks
+                    )
                     obs, reward, terminated, truncated, _ = env.step(int(action))
                     ep_reward += reward
                     done = terminated or truncated
+
+                # Give BatSim time to flush output files before ZMQ closes
+                time.sleep(2)
 
                 raw = getattr(env, "unwrapped", env)
                 adapter = getattr(raw, "_adapter", None)
@@ -99,6 +96,34 @@ class RealEvalCallback(BaseCallback):
                 completed = adapter.get_completed_jobs()
                 if not completed:
                     continue
+
+                # ── Write jobs CSV from Python (more reliable than BatSim file output) ──
+                # try:
+                #     import csv, os, pathlib
+                #     out_dir = pathlib.Path("/workspace/data")
+                #     out_dir.mkdir(parents=True, exist_ok=True)
+                #     csv_path = out_dir / f"ppo_eval_{self._eval_count}_jobs.csv"
+                #     with open(csv_path, "w", newline="") as f:
+                #         writer = csv.writer(f)
+                #         writer.writerow([
+                #             "job_id", "submit_time", "requested_resources",
+                #             "starting_time", "finish_time",
+                #             "waiting_time", "execution_time", "bounded_slowdown",
+                #         ])
+                #         for j in completed:
+                #             writer.writerow([
+                #                 j.id,
+                #                 round(j.submit_time, 3),
+                #                 j.requested_resources,
+                #                 round(j.start_time, 3),
+                #                 round(j.finish_time, 3),
+                #                 round(j.waiting_time, 3),
+                #                 round(j.actual_runtime, 3),
+                #                 round(j.bounded_slowdown, 3),
+                #             ])
+                #     print(f"  [RealEval #{self._eval_count}] Saved {len(completed)} jobs → {csv_path.name}")
+                # except Exception as e:
+                #     print(f"  [RealEval #{self._eval_count}] CSV write failed: {e}")
 
                 n = len(completed)
                 makespan = adapter.get_current_time()

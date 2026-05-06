@@ -1,3 +1,7 @@
+"""TensorBoard Logging Plugin for PyBatGym.
+
+Logs episode-level metrics to TensorBoard for visualization.
+"""
 
 from typing import Any
 import os
@@ -7,12 +11,21 @@ from pybatgym.plugins.registry import Plugin
 
 
 class TensorBoardLoggerPlugin(Plugin):
+    """Plugin to log key metrics to TensorBoard.
+    
+    Requires `tensorboard` or `tensorboardX`.
+    """
 
     @property
     def name(self) -> str:
         return "tensorboard_logger"
 
     def __init__(self, log_dir: str = "logs/tensorboard"):
+        """Initialize the TensorBoard logger.
+        
+        Args:
+            log_dir: Directory to save the TensorBoard events.
+        """
         self.log_dir = os.path.join(log_dir, datetime.now().strftime("%Y%m%d-%H%M%S"))
         self._writer = None
         self._step_count = 0

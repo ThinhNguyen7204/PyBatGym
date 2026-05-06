@@ -53,5 +53,5 @@ services:
     environment:
       # Override từ PowerShell: $env:BATSIM_WORKLOAD="..."
       - BATSIM_WORKLOAD=${BATSIM_WORKLOAD:-/workspace/data/workloads/medium_workload.json}
-      - BATSIM_PLATFORM=${BATSIM_PLATFORM:-/workspace/data/platforms/small_platform.xml}
+      - BATSIM_PLATFORM=${BATSIM_PLATFORM:-/workspace/data/platforms/medium_platform.xml}
       - BATSIM_SOCKET=${BATSIM_SOCKET:-tcp://shell:28000}

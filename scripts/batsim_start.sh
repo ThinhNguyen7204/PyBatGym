@@ -52,7 +52,7 @@ if [ ! -f "$MARKER" ]; then
 fi
 
 # ── RESTART: pybatsim should be bound. Launch BatSim. ────────────────────────
-BATSIM_PLATFORM=${BATSIM_PLATFORM:-/workspace/data/platforms/small_platform.xml}
+BATSIM_PLATFORM=${BATSIM_PLATFORM:-/workspace/data/platforms/medium_platform.xml}
 BATSIM_WORKLOAD=${BATSIM_WORKLOAD:-/workspace/data/workloads/medium_workload.json}
 BATSIM_SOCKET=${BATSIM_SOCKET:-tcp://shell:28000}
 
@@ -68,7 +68,8 @@ echo "[batsim_start] Launching BatSim..."
     -p "$BATSIM_PLATFORM" \
     -w "$BATSIM_WORKLOAD" \
     -e /workspace/data/batsim_out \
-    -s "$BATSIM_SOCKET"
+    -s "$BATSIM_SOCKET" \
+    -v information
 
 EXIT_CODE=$?
 echo "[batsim_start] BatSim exited with code $EXIT_CODE"

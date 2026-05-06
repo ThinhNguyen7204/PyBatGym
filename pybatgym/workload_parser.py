@@ -1,3 +1,8 @@
+"""Workload parser for PyBatGym.
+
+Parses BatSim JSON workload descriptions or SWF traces into Job objects.
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +16,17 @@ def parse_workload(
     file_path: str | Path,
     max_cores: int = 0,
 ) -> list[Job]:
-    
+    """Parse a workload file and return a list of Jobs.
+
+    Args:
+        file_path: Path to workload file (.json).
+        max_cores: If > 0, skip jobs requiring more cores than this.
+                   Set to ``total_nodes * cores_per_node`` to avoid
+                   scheduling deadlocks from impossible jobs.
+
+    Supports:
+    - BatSim JSON workloads (.json)
+    """
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"Workload file not found: {path}")
@@ -25,7 +40,7 @@ def parse_workload(
 
 
 def _parse_json_workload(path: Path, max_cores: int = 0) -> list[Job]:
-    
+    """Parse BatSim JSON format."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 

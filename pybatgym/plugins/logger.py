@@ -1,3 +1,8 @@
+"""CSV Logger plugin for PyBatGym.
+
+Logs step-level metrics to a CSV file for post-episode analysis.
+"""
+
 from __future__ import annotations
 
 import csv

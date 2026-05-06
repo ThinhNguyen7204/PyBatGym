@@ -142,6 +142,8 @@ class PyBatGymEnv(gym.Env):
 
         obs = self._obs_builder.build(self._state)
         info = self._build_info(events)
+        if terminated or truncated:
+            info["episode_metrics"] = self._build_episode_metrics()
 
         for plugin in self._plugins:
             plugin.on_step(action, step_reward, self._state, terminated or truncated)
@@ -164,9 +166,24 @@ class PyBatGymEnv(gym.Env):
         """Register a plugin for lifecycle hooks."""
         self._plugins.append(plugin)
 
+    def action_masks(self) -> np.ndarray:
+        """Return current valid action mask as boolean array.
+
+        This is the standard interface expected by sb3-contrib's MaskablePPO.
+        MaskablePPO auto-detects this method and calls it every step to zero-out
+        probabilities of invalid actions before sampling.
+
+        Returns:
+            Boolean numpy array of shape (action_space.n,).
+            True = action is valid, False = action is invalid.
+        """
+        obs = self._obs_builder.build(self._state)
+        return obs["action_mask"].astype(bool)
+
     # -- Private helpers --
 
     def _build_info(self, events: list) -> dict[str, Any]:
+        obs = self._obs_builder.build(self._state)
         return {
             "step": self._step_count,
             "sim_time": self._adapter.get_current_time(),
@@ -175,6 +192,36 @@ class PyBatGymEnv(gym.Env):
             "utilization": self._state["resource"].utilization,
             "cumulative_reward": self._cumulative_reward,
             "num_events": len(events),
+            "action_mask": obs.get("action_mask"),
+        }
+
+    def _build_episode_metrics(self) -> dict[str, Any]:
+        """Return final episode metrics before vectorized env auto-reset."""
+        completed = self._adapter.get_completed_jobs()
+        completed_count = len(completed)
+        makespan = self._adapter.get_current_time()
+        total_cores = self._config.platform.total_cores
+
+        avg_wait = 0.0
+        avg_slowdown = 0.0
+        utilization = 0.0
+        throughput = 0.0
+        if completed:
+            avg_wait = sum(j.waiting_time for j in completed) / completed_count
+            avg_slowdown = sum(j.bounded_slowdown for j in completed) / completed_count
+            if makespan > 0 and total_cores > 0:
+                busy = sum(j.actual_runtime * j.requested_resources for j in completed)
+                utilization = min(1.0, busy / (makespan * total_cores))
+            throughput = completed_count / makespan if makespan > 0 else 0.0
+
+        return {
+            "completed_jobs": completed_count,
+            "makespan": makespan,
+            "avg_waiting_time": avg_wait,
+            "avg_bounded_slowdown": avg_slowdown,
+            "utilization": utilization,
+            "throughput": throughput,
+            "total_reward": self._cumulative_reward,
         }
 
     def _render_ansi(self) -> str:

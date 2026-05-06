@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from typing import Optional
@@ -6,7 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RewardWeights(BaseModel):
-    
+    """Weights for multi-objective reward calculation."""
+
     utilization: float = Field(default=0.3, ge=0.0, le=1.0)
     waiting_time: float = Field(default=0.3, ge=0.0, le=1.0)
     slowdown: float = Field(default=0.3, ge=0.0, le=1.0)
@@ -19,6 +21,7 @@ class RewardWeights(BaseModel):
 
 
 class PlatformConfig(BaseModel):
+    """HPC cluster platform configuration."""
 
     total_nodes: int = Field(default=4, gt=0)
     cores_per_node: int = Field(default=1, gt=0)
@@ -29,6 +32,7 @@ class PlatformConfig(BaseModel):
 
 
 class WorkloadConfig(BaseModel):
+    """Workload generation/loading configuration."""
 
     source: str = Field(default="synthetic", pattern=r"^(synthetic|trace)$")
     trace_path: Optional[str] = None
@@ -39,12 +43,14 @@ class WorkloadConfig(BaseModel):
 
 
 class EpisodeConfig(BaseModel):
+    """Episode lifecycle configuration."""
 
     max_simulation_time: float = Field(default=10000.0, gt=0)
     max_steps: int = Field(default=500, gt=0)
 
 
 class ObservationConfig(BaseModel):
+    """Observation space configuration."""
 
     top_k_jobs: int = Field(default=10, gt=0, le=50)
     max_queue_length: int = Field(default=200, gt=0)
@@ -53,6 +59,7 @@ class ObservationConfig(BaseModel):
 
 
 class PyBatGymConfig(BaseModel):
+    """Root configuration for PyBatGym environment."""
 
     model_config = {"arbitrary_types_allowed": True}
 
