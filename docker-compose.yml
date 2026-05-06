@@ -1,0 +1,57 @@
+# version: "3.9"  # obsolete, removed to suppress warnings
+
+# ============================================================
+# PyBatGym Docker Compose
+#
+# Image đã chứa sẵn: Python, PyTorch, TensorFlow, SB3,...
+# Code được mount từ thư mục hiện tại vào /workspace
+#
+# Cách dùng:
+#   docker-compose run shell   → mở terminal Ubuntu tại /workspace
+#   (sau đó tự gõ lệnh test/train bên trong terminal đó)
+# ============================================================
+
+services:
+
+  # ── Mở Ubuntu terminal tại /workspace ─────────────────
+  shell:
+    image: ghcr.io/thinhnguyen7204/pybatgym:latest
+    volumes:
+      - .:/workspace # code mount từ Windows vào Ubuntu
+      - /var/run/docker.sock:/var/run/docker.sock # cho phép Python restart BatSim container
+    working_dir: /workspace
+    stdin_open: true # giữ stdin mở (cần cho interactive)
+    tty: true # tạo terminal thật
+    entrypoint: [ "/bin/bash", "/workspace/entrypoint.sh" ]
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "28000:28000"
+
+  # ── TensorBoard (xem training metrics) ────────────────
+  tensorboard:
+    image: ghcr.io/thinhnguyen7204/pybatgym:latest
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: [ "/bin/bash", "-c", "tensorboard --logdir logs --bind_all --port 6006" ]
+    ports:
+      - "6006:6006"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # ── BatSim Simulator (C++) ──────────────────────────────
+  batsim:
+    image: oarteam/batsim:3.1.0
+    volumes:
+      - .:/workspace
+    # Wrapper script: chờ Python ZMQ bind xong rồi mới connect
+    entrypoint: [ "/bin/sh", "/workspace/scripts/batsim_start.sh" ]
+    depends_on:
+      - shell
+    restart: "unless-stopped" # adapter restarts between episodes via Docker API
+    environment:
+      # Override từ PowerShell: $env:BATSIM_WORKLOAD="..."
+      - BATSIM_WORKLOAD=${BATSIM_WORKLOAD:-/workspace/data/workloads/medium_workload.json}
+      - BATSIM_PLATFORM=${BATSIM_PLATFORM:-/workspace/data/platforms/small_platform.xml}
+      - BATSIM_SOCKET=${BATSIM_SOCKET:-tcp://shell:28000}
