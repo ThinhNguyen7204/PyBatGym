@@ -213,22 +213,22 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
             # Simulation was truncated / forced stop → need to force-close ZMQ.
             time.sleep(0.5)
 
-            # Step 2: forcefully close ZMQ context to interrupt blocked pybatsim thread.
-            if hasattr(self, 'bs') and self.bs is not None:
-                try:
-                    if hasattr(self.bs, 'jobs'):
-                        self.bs.jobs.clear()
-                    if hasattr(self.bs, 'network'):
-                        if hasattr(self.bs.network, 'socket'):
-                            try:
-                                import zmq
-                                self.bs.network.socket.setsockopt(zmq.LINGER, 0)
-                            except Exception:
-                                pass
-                        self.bs.network.close()
-                except Exception:
-                    pass
-                self.bs = None
+        # Step 2: ALWAYS ensure ZMQ context is closed so the port is freed for the next episode!
+        if hasattr(self, 'bs') and self.bs is not None:
+            try:
+                if hasattr(self.bs, 'jobs'):
+                    self.bs.jobs.clear()
+                if hasattr(self.bs, 'network'):
+                    if hasattr(self.bs.network, 'socket') and self.bs.network.socket is not None:
+                        try:
+                            import zmq
+                            self.bs.network.socket.setsockopt(zmq.LINGER, 0)
+                        except Exception:
+                            pass
+                    self.bs.network.close()
+            except Exception:
+                pass
+            self.bs = None
 
         # Step 3: kill subprocess
         if self._batsim_proc is not None:

@@ -293,6 +293,7 @@ def main() -> None:
     # ── Load Configuration ───────────────────────────────────────────────────
     print(f"[1/5] Loading config preset: {preset}...")
     real_config = load_preset(preset)
+    real_config.mode = "real"          # ← BẮT BUỘC: dùng RealBatsimAdapter
     real_config.workload.trace_path = str(workload_path)
     real_config.workload.num_jobs = num_jobs
 
