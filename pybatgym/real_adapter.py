@@ -32,7 +32,7 @@ except ImportError:
 # Default paths resolved relative to the project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _BATSIM_DATA = _PROJECT_ROOT / "batsim_data"
-_DEFAULT_PLATFORM = _BATSIM_DATA / "platforms" / "small_platform.xml"
+_DEFAULT_PLATFORM = _BATSIM_DATA / "platforms" / "medium_platform.xml"
 _DEFAULT_WORKLOAD = _PROJECT_ROOT / "data" / "workloads" / "medium_workload.json"
 
 # Known BatSim binary locations (searched in order)
@@ -542,6 +542,7 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
 
         self._internal_time = self.bs.time()
 
+        execute_batch = []
         # Scheduling loop: keep asking the RL agent until it sends WAIT
         # or there are no more pending jobs. This lets the agent schedule
         # multiple jobs per BatSim decision point.
@@ -573,7 +574,7 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
 
                         from procset import ProcSet
                         actual_job.allocation = ProcSet(*alloc)
-                        self.bs.execute_jobs([actual_job])
+                        execute_batch.append(actual_job)
 
                         cmd.job.status = JobStatus.RUNNING
                         cmd.job.start_time = self._internal_time
@@ -590,6 +591,9 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
 
             # for-loop broke (WAIT cmd received) — exit scheduling loop
             break
+
+        if execute_batch:
+            self.bs.execute_jobs(execute_batch)
 
         # Deadlock prevention: if pending jobs remain but NO jobs are running,
         # BatSim will deadlock (no future events to trigger JOB_COMPLETED).

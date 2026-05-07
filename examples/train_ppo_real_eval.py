@@ -353,8 +353,8 @@ def main() -> None:
 
     real_eval_cb = RealEvalCallback(
         real_config=real_config,
-        eval_freq=5_000,
-        eval_episodes=1,
+        eval_freq=25_000,
+        eval_episodes=2,
         baselines=baselines,
         verbose=1,
     )

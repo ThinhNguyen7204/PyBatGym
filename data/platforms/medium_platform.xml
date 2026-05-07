@@ -2,22 +2,42 @@
 <!DOCTYPE platform SYSTEM "http://simgrid.gforge.inria.fr/simgrid/simgrid.dtd">
 <platform version="4.1">
  <zone id="AS0" routing="Full">
-   <!-- Medium HPC Platform: 8 compute nodes × 4 cores = 32 cores -->
    <host id="master_host" speed="100Mf"/>
-   <host id="Node0" speed="76.296Mf" core="4"/>
-   <host id="Node1" speed="76.296Mf" core="4"/>
-   <host id="Node2" speed="76.296Mf" core="4"/>
-   <host id="Node3" speed="76.296Mf" core="4"/>
-   <host id="Node4" speed="48.492Mf" core="4"/>
-   <host id="Node5" speed="48.492Mf" core="4"/>
-   <host id="Node6" speed="48.492Mf" core="4"/>
-   <host id="Node7" speed="48.492Mf" core="4"/>
+   <host id="Node0" speed="76.296Mf" core="1"/>
+   <host id="Node1" speed="76.296Mf" core="1"/>
+   <host id="Node2" speed="76.296Mf" core="1"/>
+   <host id="Node3" speed="76.296Mf" core="1"/>
+   <host id="Node4" speed="76.296Mf" core="1"/>
+   <host id="Node5" speed="76.296Mf" core="1"/>
+   <host id="Node6" speed="76.296Mf" core="1"/>
+   <host id="Node7" speed="76.296Mf" core="1"/>
+   <host id="Node8" speed="76.296Mf" core="1"/>
+   <host id="Node9" speed="76.296Mf" core="1"/>
+   <host id="Node10" speed="76.296Mf" core="1"/>
+   <host id="Node11" speed="76.296Mf" core="1"/>
+   <host id="Node12" speed="76.296Mf" core="1"/>
+   <host id="Node13" speed="76.296Mf" core="1"/>
+   <host id="Node14" speed="76.296Mf" core="1"/>
+   <host id="Node15" speed="76.296Mf" core="1"/>
+   <host id="Node16" speed="76.296Mf" core="1"/>
+   <host id="Node17" speed="76.296Mf" core="1"/>
+   <host id="Node18" speed="76.296Mf" core="1"/>
+   <host id="Node19" speed="76.296Mf" core="1"/>
+   <host id="Node20" speed="76.296Mf" core="1"/>
+   <host id="Node21" speed="76.296Mf" core="1"/>
+   <host id="Node22" speed="76.296Mf" core="1"/>
+   <host id="Node23" speed="76.296Mf" core="1"/>
+   <host id="Node24" speed="76.296Mf" core="1"/>
+   <host id="Node25" speed="76.296Mf" core="1"/>
+   <host id="Node26" speed="76.296Mf" core="1"/>
+   <host id="Node27" speed="76.296Mf" core="1"/>
+   <host id="Node28" speed="76.296Mf" core="1"/>
+   <host id="Node29" speed="76.296Mf" core="1"/>
+   <host id="Node30" speed="76.296Mf" core="1"/>
+   <host id="Node31" speed="76.296Mf" core="1"/>
 
-   <!-- Backbone link -->
    <link id="backbone" bandwidth="1250MBps" latency="50us"/>
    <link id="loopback" bandwidth="498MBps" latency="15us" sharing_policy="FATPIPE"/>
-
-   <!-- Node-to-backbone links -->
    <link id="link_master" bandwidth="125MBps" latency="100us"/>
    <link id="link0" bandwidth="125MBps" latency="100us"/>
    <link id="link1" bandwidth="125MBps" latency="100us"/>
@@ -27,8 +47,31 @@
    <link id="link5" bandwidth="125MBps" latency="100us"/>
    <link id="link6" bandwidth="125MBps" latency="100us"/>
    <link id="link7" bandwidth="125MBps" latency="100us"/>
+   <link id="link8" bandwidth="125MBps" latency="100us"/>
+   <link id="link9" bandwidth="125MBps" latency="100us"/>
+   <link id="link10" bandwidth="125MBps" latency="100us"/>
+   <link id="link11" bandwidth="125MBps" latency="100us"/>
+   <link id="link12" bandwidth="125MBps" latency="100us"/>
+   <link id="link13" bandwidth="125MBps" latency="100us"/>
+   <link id="link14" bandwidth="125MBps" latency="100us"/>
+   <link id="link15" bandwidth="125MBps" latency="100us"/>
+   <link id="link16" bandwidth="125MBps" latency="100us"/>
+   <link id="link17" bandwidth="125MBps" latency="100us"/>
+   <link id="link18" bandwidth="125MBps" latency="100us"/>
+   <link id="link19" bandwidth="125MBps" latency="100us"/>
+   <link id="link20" bandwidth="125MBps" latency="100us"/>
+   <link id="link21" bandwidth="125MBps" latency="100us"/>
+   <link id="link22" bandwidth="125MBps" latency="100us"/>
+   <link id="link23" bandwidth="125MBps" latency="100us"/>
+   <link id="link24" bandwidth="125MBps" latency="100us"/>
+   <link id="link25" bandwidth="125MBps" latency="100us"/>
+   <link id="link26" bandwidth="125MBps" latency="100us"/>
+   <link id="link27" bandwidth="125MBps" latency="100us"/>
+   <link id="link28" bandwidth="125MBps" latency="100us"/>
+   <link id="link29" bandwidth="125MBps" latency="100us"/>
+   <link id="link30" bandwidth="125MBps" latency="100us"/>
+   <link id="link31" bandwidth="125MBps" latency="100us"/>
 
-   <!-- Loopback routes -->
    <route src="master_host" dst="master_host"><link_ctn id="loopback"/></route>
    <route src="Node0" dst="Node0"><link_ctn id="loopback"/></route>
    <route src="Node1" dst="Node1"><link_ctn id="loopback"/></route>
@@ -38,8 +81,30 @@
    <route src="Node5" dst="Node5"><link_ctn id="loopback"/></route>
    <route src="Node6" dst="Node6"><link_ctn id="loopback"/></route>
    <route src="Node7" dst="Node7"><link_ctn id="loopback"/></route>
-
-   <!-- Star topology: all nodes connect through backbone -->
+   <route src="Node8" dst="Node8"><link_ctn id="loopback"/></route>
+   <route src="Node9" dst="Node9"><link_ctn id="loopback"/></route>
+   <route src="Node10" dst="Node10"><link_ctn id="loopback"/></route>
+   <route src="Node11" dst="Node11"><link_ctn id="loopback"/></route>
+   <route src="Node12" dst="Node12"><link_ctn id="loopback"/></route>
+   <route src="Node13" dst="Node13"><link_ctn id="loopback"/></route>
+   <route src="Node14" dst="Node14"><link_ctn id="loopback"/></route>
+   <route src="Node15" dst="Node15"><link_ctn id="loopback"/></route>
+   <route src="Node16" dst="Node16"><link_ctn id="loopback"/></route>
+   <route src="Node17" dst="Node17"><link_ctn id="loopback"/></route>
+   <route src="Node18" dst="Node18"><link_ctn id="loopback"/></route>
+   <route src="Node19" dst="Node19"><link_ctn id="loopback"/></route>
+   <route src="Node20" dst="Node20"><link_ctn id="loopback"/></route>
+   <route src="Node21" dst="Node21"><link_ctn id="loopback"/></route>
+   <route src="Node22" dst="Node22"><link_ctn id="loopback"/></route>
+   <route src="Node23" dst="Node23"><link_ctn id="loopback"/></route>
+   <route src="Node24" dst="Node24"><link_ctn id="loopback"/></route>
+   <route src="Node25" dst="Node25"><link_ctn id="loopback"/></route>
+   <route src="Node26" dst="Node26"><link_ctn id="loopback"/></route>
+   <route src="Node27" dst="Node27"><link_ctn id="loopback"/></route>
+   <route src="Node28" dst="Node28"><link_ctn id="loopback"/></route>
+   <route src="Node29" dst="Node29"><link_ctn id="loopback"/></route>
+   <route src="Node30" dst="Node30"><link_ctn id="loopback"/></route>
+   <route src="Node31" dst="Node31"><link_ctn id="loopback"/></route>
    <route src="master_host" dst="Node0"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link0"/></route>
    <route src="master_host" dst="Node1"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link1"/></route>
    <route src="master_host" dst="Node2"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link2"/></route>
@@ -48,40 +113,29 @@
    <route src="master_host" dst="Node5"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
    <route src="master_host" dst="Node6"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
    <route src="master_host" dst="Node7"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node0" dst="Node1"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link1"/></route>
-   <route src="Node0" dst="Node2"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link2"/></route>
-   <route src="Node0" dst="Node3"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link3"/></route>
-   <route src="Node0" dst="Node4"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link4"/></route>
-   <route src="Node0" dst="Node5"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
-   <route src="Node0" dst="Node6"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node0" dst="Node7"><link_ctn id="link0"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node1" dst="Node2"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link2"/></route>
-   <route src="Node1" dst="Node3"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link3"/></route>
-   <route src="Node1" dst="Node4"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link4"/></route>
-   <route src="Node1" dst="Node5"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
-   <route src="Node1" dst="Node6"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node1" dst="Node7"><link_ctn id="link1"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node2" dst="Node3"><link_ctn id="link2"/><link_ctn id="backbone"/><link_ctn id="link3"/></route>
-   <route src="Node2" dst="Node4"><link_ctn id="link2"/><link_ctn id="backbone"/><link_ctn id="link4"/></route>
-   <route src="Node2" dst="Node5"><link_ctn id="link2"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
-   <route src="Node2" dst="Node6"><link_ctn id="link2"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node2" dst="Node7"><link_ctn id="link2"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node3" dst="Node4"><link_ctn id="link3"/><link_ctn id="backbone"/><link_ctn id="link4"/></route>
-   <route src="Node3" dst="Node5"><link_ctn id="link3"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
-   <route src="Node3" dst="Node6"><link_ctn id="link3"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node3" dst="Node7"><link_ctn id="link3"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node4" dst="Node5"><link_ctn id="link4"/><link_ctn id="backbone"/><link_ctn id="link5"/></route>
-   <route src="Node4" dst="Node6"><link_ctn id="link4"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node4" dst="Node7"><link_ctn id="link4"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node5" dst="Node6"><link_ctn id="link5"/><link_ctn id="backbone"/><link_ctn id="link6"/></route>
-   <route src="Node5" dst="Node7"><link_ctn id="link5"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
-
-   <route src="Node6" dst="Node7"><link_ctn id="link6"/><link_ctn id="backbone"/><link_ctn id="link7"/></route>
+   <route src="master_host" dst="Node8"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link8"/></route>
+   <route src="master_host" dst="Node9"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link9"/></route>
+   <route src="master_host" dst="Node10"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link10"/></route>
+   <route src="master_host" dst="Node11"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link11"/></route>
+   <route src="master_host" dst="Node12"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link12"/></route>
+   <route src="master_host" dst="Node13"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link13"/></route>
+   <route src="master_host" dst="Node14"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link14"/></route>
+   <route src="master_host" dst="Node15"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link15"/></route>
+   <route src="master_host" dst="Node16"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link16"/></route>
+   <route src="master_host" dst="Node17"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link17"/></route>
+   <route src="master_host" dst="Node18"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link18"/></route>
+   <route src="master_host" dst="Node19"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link19"/></route>
+   <route src="master_host" dst="Node20"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link20"/></route>
+   <route src="master_host" dst="Node21"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link21"/></route>
+   <route src="master_host" dst="Node22"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link22"/></route>
+   <route src="master_host" dst="Node23"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link23"/></route>
+   <route src="master_host" dst="Node24"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link24"/></route>
+   <route src="master_host" dst="Node25"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link25"/></route>
+   <route src="master_host" dst="Node26"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link26"/></route>
+   <route src="master_host" dst="Node27"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link27"/></route>
+   <route src="master_host" dst="Node28"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link28"/></route>
+   <route src="master_host" dst="Node29"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link29"/></route>
+   <route src="master_host" dst="Node30"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link30"/></route>
+   <route src="master_host" dst="Node31"><link_ctn id="link_master"/><link_ctn id="backbone"/><link_ctn id="link31"/></route>
  </zone>
 </platform>

@@ -1,8 +1,8 @@
 mode: mock
 
 platform:
-  total_nodes: 8
-  cores_per_node: 4
+  total_nodes: 32
+  cores_per_node: 1
 
 workload:
   source: trace
