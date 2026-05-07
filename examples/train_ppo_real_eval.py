@@ -38,9 +38,9 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 
 from pybatgym.config.base_config import PyBatGymConfig
 from pybatgym.config.loader import load_preset
-from pybatgym.env import PyBatGymEnv
+from pybatgym.envs import PyBatGymEnv
 from pybatgym.callbacks import RealEvalCallback
-from pybatgym.plugins.benchmark import (
+from pybatgym.baselines import (
     run_baseline, sjf_policy, easy_backfilling_policy, fcfs_policy,
 )
 

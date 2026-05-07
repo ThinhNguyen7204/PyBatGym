@@ -14,12 +14,16 @@ from typing import Any, Optional
 import gymnasium as gym
 import numpy as np
 
-from pybatgym.action import ActionMapper, DefaultActionMapper
-from pybatgym.batsim_adapter import BatsimAdapter, MockAdapter
+from pybatgym.spaces import (
+    ActionMapper,
+    DefaultActionMapper,
+    DefaultObservationBuilder,
+    ObservationBuilder,
+)
+from pybatgym.adapters import BatsimAdapter, MockAdapter
 from pybatgym.config import PyBatGymConfig, load_config
-from pybatgym.models import ScheduleCommandType
-from pybatgym.observation import DefaultObservationBuilder, ObservationBuilder
-from pybatgym.reward import DefaultRewardCalculator, RewardCalculator
+from pybatgym.core import ScheduleCommandType
+from pybatgym.rewards import DefaultRewardCalculator, RewardCalculator
 
 
 class PyBatGymEnv(gym.Env):
@@ -53,7 +57,7 @@ class PyBatGymEnv(gym.Env):
         if adapter is not None:
             self._adapter = adapter
         elif self._config.mode == "real":
-            from pybatgym.real_adapter import RealBatsimAdapter
+            from pybatgym.adapters import RealBatsimAdapter
             self._adapter = RealBatsimAdapter(self._config)
         else:
             self._adapter = MockAdapter(self._config)  # EventDrivenMockAdapter

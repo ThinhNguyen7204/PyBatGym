@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from pybatgym.config.base_config import RewardWeights
-from pybatgym.models import Event, EventType, Job, Resource, ScheduleCommandType
+from pybatgym.core import Event, EventType, Job, Resource, ScheduleCommandType
 
 
 class RewardCalculator(ABC):

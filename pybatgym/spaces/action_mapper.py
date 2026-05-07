@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 import gymnasium as gym
 
-from pybatgym.models import (
+from pybatgym.core import (
     Job,
     Resource,
     ScheduleCommand,

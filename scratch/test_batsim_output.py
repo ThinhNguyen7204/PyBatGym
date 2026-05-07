@@ -1,5 +1,5 @@
 
-from pybatgym.env import PyBatGymEnv
+from pybatgym.envs import PyBatGymEnv
 from pybatgym.config.loader import load_preset
 import time
 import os

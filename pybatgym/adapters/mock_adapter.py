@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from pybatgym.config.base_config import PyBatGymConfig
-from pybatgym.models import (
+from pybatgym.core import (
     Event,
     EventType,
     Job,
@@ -300,7 +300,7 @@ class EventDrivenMockAdapter(BatsimAdapter):
         wl = self._config.workload
 
         if wl.source == "trace" and wl.trace_path:
-            from pybatgym.workload_parser import parse_workload
+            from pybatgym.plugins import parse_workload
             jobs = parse_workload(wl.trace_path, max_cores=self._resource.total_cores)
             if wl.num_jobs > 0 and len(jobs) > wl.num_jobs:
                 jobs = jobs[:wl.num_jobs]

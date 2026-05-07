@@ -7,8 +7,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from pybatgym.batsim_adapter import BatsimAdapter
-from pybatgym.models import (
+from .mock_adapter import BatsimAdapter
+from pybatgym.core import (
     Event,
     EventType,
     Job,

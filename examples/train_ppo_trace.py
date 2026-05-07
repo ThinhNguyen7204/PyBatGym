@@ -11,10 +11,10 @@ from pathlib import Path
 from stable_baselines3 import PPO
 
 from pybatgym.config.base_config import PyBatGymConfig
-from pybatgym.env import PyBatGymEnv
+from pybatgym.envs import PyBatGymEnv
 from pybatgym.plugins.tensorboard_logger import TensorBoardLoggerPlugin
 from pybatgym.plugins.logger import CSVLoggerPlugin
-from pybatgym.plugins.benchmark import run_baseline, sjf_policy, easy_backfilling_policy, fcfs_policy
+from pybatgym.baselines import run_baseline, sjf_policy, easy_backfilling_policy, fcfs_policy
 
 
 def main():

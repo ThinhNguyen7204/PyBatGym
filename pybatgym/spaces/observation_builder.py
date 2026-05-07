@@ -30,7 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from pybatgym.config.base_config import ObservationConfig
-from pybatgym.models import Job, Resource
+from pybatgym.core import Job, Resource
 
 
 class ObservationBuilder(ABC):

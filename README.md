@@ -115,7 +115,7 @@ pip install stable-baselines3 tensorboard torch pybatsim
 **Bước 4.3 — Kiểm tra cài đặt:**
 
 ```bash
-python3 -c "from pybatgym.env import PyBatGymEnv; print('✅ PyBatGym OK')"
+python3 -c "from pybatgym.envs import PyBatGymEnv; print('✅ PyBatGym OK')"
 python3 -c "import stable_baselines3; print('✅ SB3 OK')"
 python3 -c "import batsim; print('✅ PyBatsim OK')"
 ```

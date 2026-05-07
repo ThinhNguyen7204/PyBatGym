@@ -9,7 +9,7 @@ import json
 import warnings
 from pathlib import Path
 
-from pybatgym.models import Job
+from pybatgym.core import Job
 
 
 def parse_workload(

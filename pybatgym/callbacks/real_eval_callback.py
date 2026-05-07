@@ -50,7 +50,7 @@ class RealEvalCallback(BaseCallback):
 
     def _run_real_eval(self) -> None:
         """Run eval_episodes with real BatSim and log Real/* metrics."""
-        from pybatgym.env import PyBatGymEnv
+        from pybatgym.envs import PyBatGymEnv
 
         self._eval_count += 1
         t0 = time.time()
