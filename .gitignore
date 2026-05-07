@@ -6,6 +6,7 @@ __pycache__/
 *.pyd
 .Python
 batsim_data
+docs
 
 # ── Distribution / packaging ───────────────────────────────────────────────
 *.egg
@@ -15,6 +16,7 @@ build/
 wheels/
 .eggs/
 pip_error.log
+
 
 # ── Virtual environments ───────────────────────────────────────────────────
 .venv/
