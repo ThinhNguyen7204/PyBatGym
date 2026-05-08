@@ -78,9 +78,17 @@ class RealEvalCallback(BaseCallback):
                     action_masks = None
                     if isinstance(obs, dict) and "action_mask" in obs:
                         action_masks = obs["action_mask"]
-                    action, _ = self.model.predict(
-                        obs, deterministic=True, action_masks=action_masks
-                    )
+                    
+                    # Robust predict call: handle both standard PPO and MaskablePPO
+                    if action_masks is not None:
+                        try:
+                            action, _ = self.model.predict(obs, deterministic=True, action_masks=action_masks)
+                        except TypeError:
+                            # Standard SB3 PPO does not support action_masks keyword
+                            action, _ = self.model.predict(obs, deterministic=True)
+                    else:
+                        action, _ = self.model.predict(obs, deterministic=True)
+                    
                     obs, reward, terminated, truncated, _ = env.step(int(action))
                     ep_reward += reward
                     done = terminated or truncated
