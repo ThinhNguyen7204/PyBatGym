@@ -402,12 +402,6 @@ def main() -> None:
         print(f"  {'Avg Utilization (%)':<28} | {sjf_m['avg_utilization']:>9.1%}  | {real_m['avg_utilization']:>11.1%}")
         print(f"{'='*70}")
 
-        if real_m["avg_waiting_time"] < sjf_wait:
-            print(f"\n  ✅ PPO BEATS SJF on real BatSim!")
-            print(f"     Improvement: {(sjf_wait - real_m['avg_waiting_time'])/sjf_wait:.1%} shorter wait time")
-        else:
-            print(f"\n  ⚠️  PPO did not beat SJF on real BatSim.")
-            print(f"     Mock-to-real gap: PPO needs more training or reward tuning.")
     else:
         print("  Real BatSim validation skipped (BatSim unavailable).")
 

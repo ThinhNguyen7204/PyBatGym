@@ -28,6 +28,7 @@ def run_baseline(
     total_util = 0.0
     total_wait = 0.0
     total_slowdown = 0.0
+    total_makespan = 0.0
 
     for ep in range(num_episodes):
         obs, info = env.reset(seed=42 + ep)
@@ -55,6 +56,7 @@ def run_baseline(
 
             total_wait += wait_sum / len(completed)
             total_slowdown += slowdown_sum / len(completed)
+            total_makespan += makespan
             if makespan > 0 and total_cores > 0:
                 total_util += min(1.0, busy_time_sum / (makespan * total_cores))
 
@@ -64,6 +66,7 @@ def run_baseline(
         "avg_utilization": total_util / n,
         "avg_waiting_time": total_wait / n,
         "avg_slowdown": total_slowdown / n,
+        "avg_makespan": total_makespan / n,
     }
 
 

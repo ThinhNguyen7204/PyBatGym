@@ -331,11 +331,12 @@ class RealBatsimAdapter(BatsimAdapter, BatsimScheduler):
 
     def _resolve_paths(self) -> tuple[str, str]:
         """Return (platform_path, workload_path) resolving config or defaults."""
-        platform = str(_DEFAULT_PLATFORM)
-
+        p_cfg = getattr(self.config.platform, "platform_path", None)
+        platform = p_cfg if p_cfg and Path(p_cfg).exists() else str(_DEFAULT_PLATFORM)
+        
         trace = self.config.workload.trace_path or ""
         workload = trace if trace and Path(trace).exists() else str(_DEFAULT_WORKLOAD)
-
+        
         return platform, workload
 
     def _start_batsim_subprocess(self) -> None:

@@ -40,6 +40,11 @@ class RealEvalCallback(BaseCallback):
         self.writers: Optional[dict] = None  # Injected from train script
         self._last_eval: int = 0
         self._eval_count: int = 0
+        
+        # Persistent CSV Logger
+        from pybatgym.plugins.benchmark_logger import BenchmarkLogger
+        self.csv_logger = BenchmarkLogger()
+        self.policy_name = "PPO_Agent" # Default, will try to resolve later
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last_eval < self.eval_freq:
@@ -60,7 +65,8 @@ class RealEvalCallback(BaseCallback):
                 f"Running {self.eval_episodes} real episode(s)..."
             )
 
-        waits, utils, sds, rewards = [], [], [], []
+        waits, utils, sds, rewards, makespans = [], [], [], [], []
+        ep_steps, ep_invalids = [], []
 
         env = None
         try:
@@ -71,7 +77,7 @@ class RealEvalCallback(BaseCallback):
                 seed = 100 + self._eval_count * self.eval_episodes + ep
                 obs, _ = env.reset(seed=seed)
                 done = False
-                ep_reward = 0.0
+                ep_reward, steps, invalids = 0.0, 0, 0
 
                 while not done:
                     # Extract action masks for MaskablePPO support
@@ -89,8 +95,11 @@ class RealEvalCallback(BaseCallback):
                     else:
                         action, _ = self.model.predict(obs, deterministic=True)
                     
-                    obs, reward, terminated, truncated, _ = env.step(int(action))
+                    obs, reward, terminated, truncated, info = env.step(int(action))
                     ep_reward += reward
+                    steps += 1
+                    if info.get("invalid_action", False):
+                        invalids += 1
                     done = terminated or truncated
 
                 # Give BatSim time to flush output files before ZMQ closes
@@ -148,6 +157,38 @@ class RealEvalCallback(BaseCallback):
                 utils.append(util)
                 sds.append(avg_sd)
                 rewards.append(ep_reward)
+                makespans.append(makespan)
+                ep_steps.append(steps)
+                ep_invalids.append(invalids)
+
+                # Log to per_episode_metrics.csv immediately
+                ep_metrics = {
+                    "total_reward": ep_reward,
+                    "completed_jobs": n,
+                    "avg_waiting_time": avg_wait,
+                    "avg_bounded_slowdown": avg_sd,
+                    "utilization": util,
+                    "makespan": makespan,
+                    "num_steps": steps,
+                    "invalid_actions": invalids,
+                    "terminated": 1 if terminated else 0,
+                    "truncated": 1 if truncated else 0
+                }
+                # Try to resolve names from adapter on first success
+                if self._eval_count == 1 and ep == 0:
+                    p_path, w_path = adapter._resolve_paths()
+                    self._platform_name = os.path.basename(p_path)
+                    self._workload_name = os.path.basename(w_path)
+                
+                self.csv_logger.log_episode(
+                    episode_idx=self._eval_count,
+                    metrics=ep_metrics,
+                    experiment_id=f"eval_{self.num_timesteps}",
+                    policy=getattr(self.model, "policy_class", self.policy_name),
+                    workload=getattr(self, "_workload_name", "unknown"),
+                    platform=getattr(self, "_platform_name", "unknown"),
+                    seed=seed
+                )
 
         except Exception as exc:
             if self.verbose >= 1:
@@ -169,6 +210,7 @@ class RealEvalCallback(BaseCallback):
         avg_util = float(np.mean(utils))
         avg_sd = float(np.mean(sds))
         avg_rew = float(np.mean(rewards))
+        avg_makespan = float(np.mean(makespans)) if makespans else 0.0
         advantage = (self.sjf_wait - avg_wait) / max(self.sjf_wait, 1e-8)
         elapsed = time.time() - t0
 
@@ -179,20 +221,22 @@ class RealEvalCallback(BaseCallback):
             self.writers["PPO"].add_scalar("Comparison_Real/Waiting_Time", avg_wait, step)
             self.writers["PPO"].add_scalar("Comparison_Real/Utilization", avg_util, step)
             self.writers["PPO"].add_scalar("Comparison_Real/Slowdown", avg_sd, step)
+            self.writers["PPO"].add_scalar("Comparison_Real/Makespan", avg_makespan, step)
+            self.writers["PPO"].add_scalar("Evaluation/Reward", avg_rew, step)
 
             for name, metrics in self.baselines.items():
                 tag = name.upper()
                 if tag in self.writers:
                     # Log baseline values at the SAME step for horizontal reference
-                    self.writers[tag].add_scalar("Comparison_Real/Waiting_Time", metrics.get("avg_waiting_time", 0), step)
-                    self.writers[tag].add_scalar("Comparison_Real/Utilization", metrics.get("avg_utilization", 0), step)
-                    self.writers[tag].add_scalar("Comparison_Real/Slowdown", metrics.get("avg_slowdown", 0), step)
+                    w = self.writers[tag]
+                    w.add_scalar("Comparison_Real/Waiting_Time", metrics.get("avg_waiting_time", 0), step)
+                    w.add_scalar("Comparison_Real/Utilization", metrics.get("avg_utilization", 0), step)
+                    w.add_scalar("Comparison_Real/Slowdown", metrics.get("avg_slowdown", 0), step)
+                    w.add_scalar("Comparison_Real/Makespan", metrics.get("avg_makespan", 0), step)
 
         if self.verbose >= 1:
-            verdict = "BEAT SJF ✓" if avg_wait < self.sjf_wait else "behind SJF ✗"
             print(
                 f"  [RealEval #{self._eval_count}] "
-                f"wait={avg_wait:.1f}s (SJF={self.sjf_wait:.1f})  "
-                f"util={avg_util:.1%}  sd={avg_sd:.2f}  "
-                f"reward={avg_rew:.2f}  [{verdict}]  t={elapsed:.0f}s"
+                f"wait={avg_wait:.1f}s  util={avg_util:.1%}  sd={avg_sd:.2f}  "
+                f"reward={avg_rew:.2f}  t={elapsed:.0f}s"
             )

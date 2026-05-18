@@ -1,28 +1,3 @@
-"""Phase 2 + Real BatSim validation: Mock training with periodic real BatSim evaluation.
-
-Architecture:
-  - PPO trains fast on MockAdapter (synthetic workload ~ medium_workload schedule)
-  - Every eval_freq steps: RealEvalCallback runs 1 episode on actual BatSim 3.1.0
-  - Competitive stopping: win_rate vs SJF >= 80% over last 50 Mock episodes
-  - Final validation: N episodes on real BatSim after training converges
-
-Prerequisites (inside Docker):
-  # Terminal 1 — start BatSim service
-  docker-compose up batsim
-
-  # Terminal 2 — run training
-  source /workspace/.venv_ubuntu/bin/activate
-  python3 examples/train_ppo_real_eval.py
-
-  # Terminal 3 — TensorBoard
-  tensorboard --logdir logs/tensorboard_real_eval --bind_all --port 6006
-
-TensorBoard metrics:
-  HPC/*        — from Mock (every episode, fast)
-  Real/*       — from real BatSim (every eval_freq steps)
-  Baseline/*   — SJF/FCFS/EASY reference lines
-"""
-
 from __future__ import annotations
 
 import os
@@ -140,6 +115,7 @@ class _MockEpisodeDiagnosticsCallback(BaseCallback):
         self.writer.add_scalar("Mock/Avg_Bounded_Slowdown", avg_sd, step)
         self.writer.add_scalar("Mock/Utilization", util, step)
         self.writer.add_scalar("Mock/Total_Reward", total_reward, step)
+        self.writer.add_scalar("Training/Reward", total_reward, step)
         self.writer.add_scalar("Mock/Completed_All_Jobs", 1.0 if complete_ok else 0.0, step)
 
         # Log baselines as reference lines in the same "Mock" tags
@@ -150,8 +126,14 @@ class _MockEpisodeDiagnosticsCallback(BaseCallback):
             if w is not None and hasattr(w, "add_scalar"):
                 # Fallback to metrics from dict if available
                 m = self.writers.get(f"{name}_metrics", {})
-                val = m.get("avg_waiting_time", 0)
-                w.add_scalar("Mock/Avg_Waiting_Time", val, step)
+                val_wait = m.get("avg_waiting_time", 0)
+                val_util = m.get("avg_utilization", 0)
+                val_make = m.get("avg_makespan", 0)
+                val_sd = m.get("avg_slowdown", 0)
+                w.add_scalar("Mock/Avg_Waiting_Time", val_wait, step)
+                w.add_scalar("Mock/Utilization", val_util, step)
+                w.add_scalar("Mock/Makespan", val_make, step)
+                w.add_scalar("Mock/Avg_Bounded_Slowdown", val_sd, step)
 
         if completed_count > self._best_completed and self.save_path:
             self._best_completed = completed_count
@@ -196,34 +178,76 @@ def validate_on_real(model: MaskablePPO, real_config: PyBatGymConfig, num_episod
     """Run trained PPO on real BatSim and return averaged metrics."""
     print(f"\n  Running {num_episodes} validation episode(s) on real BatSim...")
 
+    from pybatgym.plugins.benchmark_logger import BenchmarkLogger
+    logger = BenchmarkLogger()
+    
+    policy_name = "PPO_Maskable"
+    # Resolve paths via adapter logic to get actual names
+    env_tmp = PyBatGymEnv(config=real_config)
+    p_path, w_path = env_tmp._adapter._resolve_paths()
+    platform_name = Path(p_path).stem
+    workload_name = Path(w_path).stem
+    env_tmp.close()
+
     waits, utils, sds, rewards = [], [], [], []
     env = None
     try:
         env = PyBatGymEnv(config=real_config)
         for ep in range(num_episodes):
-            obs, _ = env.reset(seed=200 + ep)
-            done, ep_reward = False, 0.0
+            seed = 200 + ep
+            obs, _ = env.reset(seed=seed)
+            done, ep_reward, steps = False, 0.0, 0
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                # Robust predict call: handle both standard PPO and MaskablePPO
+                action_masks = obs["action_mask"] if isinstance(obs, dict) and "action_mask" in obs else None
+                action, _ = model.predict(obs, deterministic=True, action_masks=action_masks)
+                
                 obs, reward, terminated, truncated, _ = env.step(int(action))
                 ep_reward += reward
+                steps += 1
                 done = terminated or truncated
 
             raw = getattr(env, "unwrapped", env)
             adapter = getattr(raw, "_adapter", None)
-            if adapter is None:
-                continue
+            if adapter is None: continue
             completed = adapter.get_completed_jobs()
-            if not completed:
-                continue
+            if not completed: continue
+            
             n = len(completed)
             makespan = adapter.get_current_time()
             tc = raw._config.platform.total_cores
-            waits.append(sum(j.waiting_time for j in completed) / n)
-            sds.append(sum(j.bounded_slowdown for j in completed) / n)
+            
+            avg_wait = sum(j.waiting_time for j in completed) / n
+            avg_sd = sum(j.bounded_slowdown for j in completed) / n
+            util = 0.0
             if makespan > 0 and tc > 0:
                 busy = sum(j.actual_runtime * j.requested_resources for j in completed)
-                utils.append(busy / (makespan * tc))
+                util = busy / (makespan * tc)
+            
+            ep_metrics = {
+                "total_reward": ep_reward,
+                "completed_jobs": n,
+                "avg_waiting_time": avg_wait,
+                "avg_bounded_slowdown": avg_sd,
+                "utilization": util,
+                "makespan": makespan,
+                "num_steps": steps,
+                "terminated": int(terminated),
+                "truncated": int(truncated),
+            }
+            
+            logger.log_episode(
+                episode_idx=ep,
+                metrics=ep_metrics,
+                policy=policy_name,
+                workload=workload_name,
+                platform=platform_name,
+                seed=seed
+            )
+
+            waits.append(avg_wait)
+            utils.append(util)
+            sds.append(avg_sd)
             rewards.append(ep_reward)
             print(f"    ep {ep+1}: wait={waits[-1]:.1f}s  util={utils[-1] if utils else 0:.1%}  reward={ep_reward:.2f}")
     except Exception as exc:
@@ -231,18 +255,34 @@ def validate_on_real(model: MaskablePPO, real_config: PyBatGymConfig, num_episod
         return {}
     finally:
         if env is not None:
-            try:
-                env.close()
-            except Exception:
-                pass
+            try: env.close()
+            except: pass
 
-    n = max(len(waits), 1)
-    return {
+    avg_metrics = {
         "avg_waiting_time": float(np.mean(waits)) if waits else 0.0,
         "avg_slowdown":     float(np.mean(sds))   if sds   else 0.0,
         "avg_utilization":  float(np.mean(utils))  if utils  else 0.0,
         "avg_reward":       float(np.mean(rewards)) if rewards else 0.0,
     }
+    
+    # Log summary to CSV
+    summary_metrics = {
+        "total_reward": avg_metrics["avg_reward"],
+        "completed_jobs": n if waits else 0,
+        "avg_waiting_time": avg_metrics["avg_waiting_time"],
+        "avg_bounded_slowdown": avg_metrics["avg_slowdown"],
+        "utilization": avg_metrics["avg_utilization"],
+        "makespan": makespan if waits else 0,
+        "num_steps": steps if waits else 0,
+    }
+    logger.log_summary(
+        metrics=summary_metrics,
+        policy=policy_name,
+        workload=workload_name,
+        platform=platform_name
+    )
+
+    return avg_metrics
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -343,13 +383,16 @@ def main() -> None:
         "SJF": SummaryWriter(f"{log_dir}/SJF"),
         "FCFS": SummaryWriter(f"{log_dir}/FCFS"),
         "EASY": SummaryWriter(f"{log_dir}/EASY"),
+        "SJF_metrics": sjf_m,
+        "FCFS_metrics": fcfs_m,
+        "EASY_metrics": easy_m,
     }
 
     diagnostics_cb = _MockEpisodeDiagnosticsCallback(
         expected_jobs=num_jobs,
         writers=writers,
         print_every=1,
-        max_timesteps=2_000_000,
+        max_timesteps=1_000_000,
         save_path=save_path,
         verbose=1,
     )
@@ -405,12 +448,6 @@ def main() -> None:
         print(f"  {'Avg Utilization (%)':<28} | {sjf_m['avg_utilization']:>9.1%}  | {real_m['avg_utilization']:>11.1%}")
         print(f"{'='*70}")
 
-        if real_m["avg_waiting_time"] < sjf_wait:
-            print(f"\n  ✅ PPO BEATS SJF on real BatSim!")
-            print(f"     Improvement: {(sjf_wait - real_m['avg_waiting_time'])/sjf_wait:.1%} shorter wait time")
-        else:
-            print(f"\n  ⚠️  PPO did not beat SJF on real BatSim.")
-            print(f"     Mock-to-real gap: PPO needs more training or reward tuning.")
     else:
         print("  Real BatSim validation skipped (BatSim unavailable).")
 

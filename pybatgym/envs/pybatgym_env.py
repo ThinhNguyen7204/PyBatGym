@@ -167,7 +167,6 @@ class PyBatGymEnv(gym.Env):
             plugin.on_close()
 
     def register_plugin(self, plugin: Any) -> None:
-        """Register a plugin for lifecycle hooks."""
         self._plugins.append(plugin)
 
     def action_masks(self) -> np.ndarray:

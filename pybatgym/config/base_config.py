@@ -25,6 +25,7 @@ class PlatformConfig(BaseModel):
 
     total_nodes: int = Field(default=4, gt=0)
     cores_per_node: int = Field(default=1, gt=0)
+    platform_path: Optional[str] = None
 
     @property
     def total_cores(self) -> int:
